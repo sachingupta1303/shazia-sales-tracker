@@ -176,7 +176,7 @@ export function TargetsAdminClient({ userRole }: Props) {
   const [editRow,  setEditRow]  = useState<TargetRow | null>(null)
   const [auditFor, setAuditFor] = useState<string | null>(null)
 
-  const isManager = userRole === "MANAGER" || userRole === "DIRECTOR"
+  const canEdit = userRole === "SUPER_ADMIN" || userRole === "ADMIN" || userRole === "MANAGER" || userRole === "DIRECTOR"
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -192,9 +192,9 @@ export function TargetsAdminClient({ userRole }: Props) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  if (!isManager) return (
+  if (!canEdit) return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-800 text-sm">
-      Only managers and directors can edit targets.
+      Only admins and managers can edit targets.
     </div>
   )
 

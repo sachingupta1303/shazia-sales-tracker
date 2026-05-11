@@ -170,7 +170,7 @@ export function OwnershipAdminClient({ userRole, allSalesPersons }: Props) {
   const [reassignBuyer, setReassignBuyer] = useState<ResolvedBuyer | null>(null)
   const [historyBuyer,  setHistoryBuyer]  = useState<ResolvedBuyer | null>(null)
 
-  const isManager = userRole === "MANAGER" || userRole === "DIRECTOR"
+  const canEdit = userRole === "SUPER_ADMIN" || userRole === "ADMIN" || userRole === "MANAGER" || userRole === "DIRECTOR"
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -189,9 +189,9 @@ export function OwnershipAdminClient({ userRole, allSalesPersons }: Props) {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  if (!isManager) return (
+  if (!canEdit) return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-800 text-sm">
-      Only managers and directors can access ownership reassignment.
+      Only admins and managers can access ownership reassignment.
     </div>
   )
 

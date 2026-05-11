@@ -37,7 +37,7 @@ export type BrandCategory = "OUR_BRAND" | "PRIVATE_BRAND" | "UNCLASSIFIED"
 
 export type HealthLabel = "STRONG" | "HEALTHY" | "AT_RISK" | "CRITICAL" | "DORMANT"
 
-export type UserRole = "SALES_PERSON" | "MANAGER" | "DIRECTOR"
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "USER" | "SALES_PERSON" | "MANAGER" | "DIRECTOR"
 
 export type RemarkType = "GENERAL" | "MISSED_TARGET" | "WEEKLY_REVIEW" | "ALERT"
 

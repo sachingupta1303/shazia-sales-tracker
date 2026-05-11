@@ -1329,6 +1329,29 @@ export async function getBuyerAliasMap(): Promise<Map<string, string>> {
   return result
 }
 
+// ─── Credentials ─────────────────────────────────────────────────────────────
+
+export async function getCredentials(): Promise<(import("@/types").AppUser & { password: string })[]> {
+  try {
+    const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.CREDENTIALS)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
+
+    return dataRows.map((r, i) => ({
+      id: String(i + 1),
+      name: getCell(r, h, "Name"),
+      email: getCell(r, h, "Email"),
+      role: getCell(r, h, "Role") as import("@/types").UserRole,
+      password: getCell(r, h, "Password"),
+      salesPersonName: getCell(r, h, "Name").toUpperCase(), // Default mapping
+    }))
+  } catch (err) {
+    console.error("Failed to fetch credentials:", err)
+    return []
+  }
+}
+
 // ─── Aggregation Helpers ──────────────────────────────────────────────────────
 
 export function filterPIByFY(records: PIRecord[], fy: FinancialYear): PIRecord[] {

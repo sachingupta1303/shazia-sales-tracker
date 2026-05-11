@@ -30,6 +30,7 @@ export const SHEET_NAMES = {
   // Country strategy (in BUSINESS_PLAN sheet)
   COUNTRY_STRATEGIES:     "COUNTRY_STRATEGIES",
   TRAVEL_PLANS:           "TRAVEL_PLANS",
+  CREDENTIALS:            "Credential",
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

@@ -510,7 +510,7 @@ export function CanonicalAdminClient({ userRole }: Props) {
   const [showNew,  setShowNew]  = useState(false)
   const [editBuyer, setEditBuyer] = useState<CanonicalBuyer | null>(null)
 
-  const isManager = userRole === "MANAGER" || userRole === "DIRECTOR"
+  const canEdit = userRole === "SUPER_ADMIN" || userRole === "ADMIN" || userRole === "MANAGER" || userRole === "DIRECTOR"
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -524,9 +524,9 @@ export function CanonicalAdminClient({ userRole }: Props) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  if (!isManager) return (
+  if (!canEdit) return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-800 text-sm">
-      Only managers and directors can access canonical buyer admin.
+      Only admins and managers can access canonical buyer admin.
     </div>
   )
 

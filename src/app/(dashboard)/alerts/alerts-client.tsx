@@ -143,7 +143,7 @@ export function AlertsClient({ userRole, salesPerson }: Props) {
             </span>
           </div>
         )}
-        {(userRole === "MANAGER" || userRole === "DIRECTOR") && (
+        {(userRole === "SUPER_ADMIN" || userRole === "ADMIN" || userRole === "MANAGER" || userRole === "DIRECTOR") && (
           <button
             onClick={runTriggers}
             disabled={checking}

@@ -221,14 +221,16 @@ function QuickTaskModal({
 
 // ── Task Cell — shows saved task data inline ──────────────────────────────────
 function TaskCell({
-  task, onAdd, onEdit, onDelete,
+  task, onAdd, onEdit, onDelete, canEdit,
 }: {
   task: BuyerTask | undefined
   onAdd: () => void
   onEdit: (t?: BuyerTask) => void
   onDelete: (id: string) => void
+  canEdit: boolean
 }) {
   if (!task) {
+    if (!canEdit) return <span className="text-gray-300 italic text-[10px]">No tasks</span>
     return (
       <button
         onClick={onAdd}
@@ -246,22 +248,24 @@ function TaskCell({
   return (
     <div className="relative space-y-1 min-w-[220px] max-w-[280px] pr-8 group bg-gray-50/50 p-2 rounded-lg border border-gray-100">
       {/* Action Icons (Top Right) */}
-      <div className="absolute top-1.5 right-1.5 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={() => onEdit(task)}
-          className="p-1 bg-white rounded border border-gray-200 shadow-sm text-gray-400 hover:text-blue-600 hover:border-blue-200 transition-all"
-          title="Edit Task"
-        >
-          ✏️
-        </button>
-        <button
-          onClick={() => onDelete(task.id)}
-          className="p-1 bg-white rounded border border-gray-200 shadow-sm text-gray-400 hover:text-red-600 hover:border-red-200 transition-all"
-          title="Delete Task"
-        >
-          🗑️
-        </button>
-      </div>
+      {canEdit && (
+        <div className="absolute top-1.5 right-1.5 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={() => onEdit(task)}
+            className="p-1 bg-white rounded border border-gray-200 shadow-sm text-gray-400 hover:text-blue-600 hover:border-blue-200 transition-all"
+            title="Edit Task"
+          >
+            ✏️
+          </button>
+          <button
+            onClick={() => onDelete(task.id)}
+            className="p-1 bg-white rounded border border-gray-200 shadow-sm text-gray-400 hover:text-red-600 hover:border-red-200 transition-all"
+            title="Delete Task"
+          >
+            🗑️
+          </button>
+        </div>
+      )}
 
       {/* 1. Topic */}
       <p className="text-xs font-bold text-gray-900 truncate leading-snug" title={task.title}>
@@ -287,12 +291,14 @@ function TaskCell({
         </p>
       )}
 
-      <button
-        onClick={() => onAdd()}
-        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline mt-1 block"
-      >
-        + Add another
-      </button>
+      {canEdit && (
+        <button
+          onClick={() => onAdd()}
+          className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline mt-1 block"
+        >
+          + Add another
+        </button>
+      )}
     </div>
   )
 }
@@ -400,6 +406,7 @@ export function BuyersClient({ userRole, salesPerson }: Props) {
   }
 
   const isSP = userRole === "SALES_PERSON"
+  const canEdit = userRole === "SUPER_ADMIN" || userRole === "ADMIN" || userRole === "MANAGER" || userRole === "DIRECTOR"
 
   const getBuyerTask = (b: ResolvedBuyer): BuyerTask | undefined =>
     (b.buyerCode          ? taskMap.get(b.buyerCode)          : undefined) ??
@@ -616,6 +623,7 @@ export function BuyersClient({ userRole, salesPerson }: Props) {
                             onAdd={()  => openModalFor(b)}
                             onEdit={(t) => openModalFor(b, t)}
                             onDelete={(id) => handleTaskDelete(id)}
+                            canEdit={canEdit}
                           />
                         </td>
                       </tr>
@@ -680,6 +688,7 @@ export function BuyersClient({ userRole, salesPerson }: Props) {
                         onAdd={()  => openModalFor(b)}
                         onEdit={(t) => openModalFor(b, t)}
                         onDelete={(id) => handleTaskDelete(id)}
+                        canEdit={canEdit}
                       />
                     </div>
                   </div>
