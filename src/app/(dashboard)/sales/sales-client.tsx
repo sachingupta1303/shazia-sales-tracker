@@ -6,10 +6,10 @@ import { SummaryCard } from "@/components/ui/page-header"
 import { StatusBadge, TierBadge, GapCell, AchievementBar, SegmentTag } from "@/components/ui/status-badge"
 import { BrandPill } from "@/components/ui/brand-pill"
 import { formatNumber } from "@/lib/utils"
-import type { PIRecord, UserRole } from "@/types"
+import type { PIRecord, UserRole, BuyerSegment } from "@/types"
 
 interface EnrichedPI extends PIRecord {
-  segment: string;
+  segment: BuyerSegment;
   isKeyAccount: boolean;
   canonicalCode: string;
   isNewBuyer: boolean;

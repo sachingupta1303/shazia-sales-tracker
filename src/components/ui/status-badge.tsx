@@ -60,7 +60,7 @@ export function AchievementBar({ pct, status }: { pct: number; status: Performan
   )
 }
 
-export function SegmentTag({ segment, isKeyAccount, className }: { segment: string; isKeyAccount?: boolean; className?: string }) {
+export function SegmentTag({ segment, isKeyAccount, className }: { segment?: string; isKeyAccount?: boolean; className?: string }) {
   const isVip = segment === "VIP" || isKeyAccount
   const isStrategic = segment === "STRATEGIC"
   

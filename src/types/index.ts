@@ -74,6 +74,12 @@ export interface PIRecord {
   fyMonthNo: FYMonth
   fyMonthName: string
   fyQuarter: FYQuarter
+
+  // Enriched fields (added in API layer)
+  segment?: BuyerSegment
+  isKeyAccount?: boolean
+  canonicalCode?: string
+  isNewBuyer?: boolean
 }
 
 // ─── Target Master ────────────────────────────────────────────────────────────
