@@ -228,7 +228,10 @@ export function SalesClient({ userRole, salesPerson }: Props) {
             : data?.records.map((r) => (
                 <div key={`${r.piNumber}-mobile`} className="p-4 space-y-2">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium text-gray-800 text-sm leading-tight">{r.buyerCompanyName}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      <SegmentTag segment={r.segment} isKeyAccount={r.isKeyAccount} />
+                      <p className="font-bold text-gray-900 text-sm leading-tight truncate">{r.buyerCompanyName}</p>
+                    </div>
                     <span className="font-bold text-gray-900 text-sm tabular-nums flex-shrink-0">{r.totalContainers} ctrs</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 text-xs">

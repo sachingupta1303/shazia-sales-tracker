@@ -51,7 +51,7 @@ export default function LoginPage() {
               Welcome Back
             </h1>
             <p className="text-[#64748b] text-[15px]">
-              Sign in to your CRM APP account
+              Sign in to your Sales Tracker account
             </p>
           </div>
 

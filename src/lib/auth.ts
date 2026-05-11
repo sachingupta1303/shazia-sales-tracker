@@ -7,6 +7,8 @@ import type { AppUser, UserRole } from "@/types"
 
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  secret: process.env.AUTH_SECRET,
+  trustHost: true,
   providers: [
     Credentials({
       credentials: {
@@ -14,19 +16,37 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null
-        
-        const { getCredentials } = await import("@/lib/data")
-        const users = await getCredentials()
-        
-        const user = users.find(
-          (u) =>
-            u.email.toLowerCase() === (credentials.email as string).toLowerCase() &&
-            u.password === credentials.password
-        )
-        if (!user) return null
-        const { password: _, ...safeUser } = user
-        return safeUser
+        try {
+          if (!credentials?.email || !credentials?.password) return null
+          
+          console.log("Auth: Attempting login for", credentials.email)
+          const { getCredentials } = await import("@/lib/data")
+          const users = await getCredentials()
+          
+          if (!users || users.length === 0) {
+            console.error("Auth: No users fetched from source")
+            return null
+          }
+
+          console.log("Auth: Fetched users count:", users.length)
+          const user = users.find(
+            (u) =>
+              u.email.toLowerCase() === (credentials.email as string).toLowerCase() &&
+              u.password === credentials.password
+          )
+          
+          if (!user) {
+            console.log("Auth: No user found with these credentials")
+            return null
+          }
+
+          console.log("Auth: Login successful for", user.name)
+          const { password: _, ...safeUser } = user
+          return safeUser
+        } catch (error) {
+          console.error("Auth: Authorize error:", error)
+          return null // Return null instead of throwing to avoid crashing NextAuth
+        }
       },
     }),
   ],
@@ -48,6 +68,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   pages: {
     signIn: "/login",
+    error: "/login", // Redirect errors back to login page
   },
   session: {
     strategy: "jwt",

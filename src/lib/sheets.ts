@@ -51,7 +51,7 @@ function getSheetsClient() {
 }
 
 // ─── Cache Logic ──────────────────────────────────────────────────────────────
-const CACHE_TTL_MS = 60 * 1000 // 60 seconds
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes (300,000 ms)
 const cache = new Map<string, { data: string[][]; timestamp: number }>()
 
 function getCachedData(key: string): string[][] | null {

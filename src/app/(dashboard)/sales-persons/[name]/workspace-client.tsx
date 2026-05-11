@@ -9,7 +9,8 @@ import {
 import { 
   StatusBadge, 
   GapCell, 
-  AchievementBar 
+  AchievementBar,
+  SegmentTag
 } from "@/components/ui/status-badge"
 import { formatNumber } from "@/lib/utils"
 import type { PerformanceStatus, BuyerSegment, PIRecord } from "@/types"
@@ -195,8 +196,7 @@ export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
                   <tr key={b.code} className="hover:bg-green-50/30 transition-colors group cursor-pointer" onClick={() => router.push(`/buyers/${encodeURIComponent(b.code)}`)}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        {(b.segment === "VIP" || b.isKeyAccount) && <span className="text-violet-500 font-bold">★</span>}
-                        {b.segment === "STRATEGIC" && <span className="text-orange-500 font-bold">★</span>}
+                        <SegmentTag segment={b.segment} isKeyAccount={b.isKeyAccount} />
                         <span className="font-bold text-gray-900 group-hover:text-green-700">{b.name}</span>
                       </div>
                     </td>

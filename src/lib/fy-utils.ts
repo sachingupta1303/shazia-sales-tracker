@@ -25,10 +25,24 @@ export function getPreviousFY(fy: FinancialYear): FinancialYear {
 
 export function getFYWeek(date: Date, fy: FinancialYear): FYWeek {
   const { start } = getFYBoundaries(fy)
+  
+  // Find the first Monday of the FY (or on/after start)
+  // Day 0 = Sunday, 1 = Monday, ...
+  const startDay = start.getDay()
+  const daysToFirstMonday = (1 - startDay + 7) % 7
+  
   const diffMs = date.getTime() - start.getTime()
   if (diffMs < 0) return 1
+  
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  return (Math.ceil((diffDays + 1) / 7) as FYWeek) || 1
+  
+  if (diffDays < daysToFirstMonday) {
+    return 1 // Still in the first (partial) week
+  }
+  
+  // Weeks after the first Monday
+  const daysAfterFirstMonday = diffDays - daysToFirstMonday
+  return (Math.floor(daysAfterFirstMonday / 7) + 2) as FYWeek
 }
 
 export function getCurrentFYWeek(): FYWeek {

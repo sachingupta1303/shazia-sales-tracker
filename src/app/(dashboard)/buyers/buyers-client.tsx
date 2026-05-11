@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { FilterBar, type FilterState } from "@/components/ui/filter-bar"
-import { AchievementBar } from "@/components/ui/status-badge"
+import { AchievementBar, SegmentTag } from "@/components/ui/status-badge"
 import { formatNumber } from "@/lib/utils"
 import { segmentBg, healthBg } from "@/lib/utils"
 import type { ResolvedBuyer, BuyerSegment, BuyerTier, UserRole, BuyerTask } from "@/types"
@@ -652,12 +652,14 @@ export function BuyersClient({ userRole, salesPerson }: Props) {
                     onClick={() => router.push(`/buyers/${encodeURIComponent(b.canonicalBuyerCode)}`)}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-bold text-gray-900 text-sm leading-tight">
-                          {b.isKeyAccount && <span className="text-violet-500 mr-1">★</span>}
-                          {b.canonicalBuyerName}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                          <SegmentTag segment={b.segment} isKeyAccount={b.isKeyAccount} />
+                          <p className="font-bold text-gray-900 text-sm leading-tight truncate">
+                            {b.canonicalBuyerName}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[10px] text-gray-400 font-bold uppercase">{b.country}</span>
                           <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${segmentBg(b.segment)}`}>
                             {segmentShortLabel(b.segment)}

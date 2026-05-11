@@ -54,140 +54,267 @@ export const MEETING_TARGET_BY_SEGMENT: Record<BuyerSegment, number> = {
   NEW_OPP:        0,
 }
 
+// ─── Memoization Layer (Performance Optimization) ──────────────────────────
+const cache = new Map<string, { data: any; timestamp: number }>()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+async function withMemo<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const now = Date.now()
+  const entry = cache.get(key)
+  if (entry && now - entry.timestamp < CACHE_TTL) return entry.data
+  const data = await fn()
+  cache.set(key, { data, timestamp: now })
+  return data
+}
+
 // ─── PI Backend Master ────────────────────────────────────────────────────────
 
 export async function getPIRecords(): Promise<PIRecord[]> {
-  const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.PI_BACKEND_MASTER)
-  if (!rows.length) return []
-  const [headerRow, ...dataRows] = rows
-  const h = buildHeaderMap(headerRow)
+  return withMemo("pi_records", async () => {
+    const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.PI_BACKEND_MASTER)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
 
-  return dataRows
-    .filter((r) => r[h["PI Number"]] && r[h["PI Date"]])
-    .map((r) => ({
-      piNumber:          getCell(r, h, "PI Number"),
-      piDate:            getCell(r, h, "PI Date"),
-      crmEmail:          getCell(r, h, "CRM Email"),
-      buyerCompanyName:  getCell(r, h, "Buyer Company Name"),
-      buyerCode:         getCell(r, h, "Buyer Code"),
-      countries:         getCell(r, h, "Countries"),
-      portOfDischarge:   getCell(r, h, "Port of Discharge"),
-      loadingPort:       getCell(r, h, "Loading Port"),
-      salesPerson:       getCell(r, h, "Sales Person"),
-      salesCoordinator:  getCell(r, h, "Sales Cordinator"),
-      buyerEmail:        getCell(r, h, "Buyer Email"),
-      brand:             getCell(r, h, "Brand"),
-      varieties:         getCell(r, h, "Varieties") as Variety,
-      description:       getCell(r, h, "Description"),
-      packagingType:     getCell(r, h, "Packaging Type"),
-      packSize:          getCell(r, h, "Pack Size"),
-      totalContainers:   getCellNum(r, h, "Total Containers"),
-      totalQty:          getCellNum(r, h, "Total Qty"),
-      qtyMTs:            getCellNum(r, h, "Qty MTs"),
-      rate:              getCellNum(r, h, "Rate"),
-      totalAmount:       getCellNum(r, h, "Total Amount"),
-      currency:          getCell(r, h, "Currency"),
-      approvalStatus:    getCell(r, h, "Approval Status"),
-      financialYear:     getCell(r, h, "Financial Year") as FinancialYear,
-      fyWeekNo:          getCellNum(r, h, "FY Week No"),
-      fyMonthNo:         getCellNum(r, h, "FY Month No"),
-      fyMonthName:       getCell(r, h, "FY Month Name"),
-      fyQuarter:         getCellNum(r, h, "FY Quarter") as 1 | 2 | 3 | 4,
-    }))
+    return dataRows
+      .filter((r) => r[h["PI Number"]] && r[h["PI Date"]])
+      .map((r) => ({
+        piNumber:          getCell(r, h, "PI Number"),
+        piDate:            getCell(r, h, "PI Date"),
+        crmEmail:          getCell(r, h, "CRM Email"),
+        buyerCompanyName:  getCell(r, h, "Buyer Company Name"),
+        buyerCode:         getCell(r, h, "Buyer Code"),
+        countries:         getCell(r, h, "Countries"),
+        portOfDischarge:   getCell(r, h, "Port of Discharge"),
+        loadingPort:       getCell(r, h, "Loading Port"),
+        salesPerson:       getCell(r, h, "Sales Person"),
+        salesCoordinator:  getCell(r, h, "Sales Cordinator"),
+        buyerEmail:        getCell(r, h, "Buyer Email"),
+        brand:             getCell(r, h, "Brand"),
+        varieties:         getCell(r, h, "Varieties") as Variety,
+        description:       getCell(r, h, "Description"),
+        packagingType:     getCell(r, h, "Packaging Type"),
+        packSize:          getCell(r, h, "Pack Size"),
+        totalContainers:   getCellNum(r, h, "Total Containers"),
+        totalQty:          getCellNum(r, h, "Total Qty"),
+        qtyMTs:            getCellNum(r, h, "Qty MTs"),
+        rate:              getCellNum(r, h, "Rate"),
+        totalAmount:       getCellNum(r, h, "Total Amount"),
+        currency:          getCell(r, h, "Currency"),
+        approvalStatus:    getCell(r, h, "Approval Status"),
+        financialYear:     getCell(r, h, "Financial Year") as FinancialYear,
+        fyWeekNo:          getCellNum(r, h, "FY Week No"),
+        fyMonthNo:         getCellNum(r, h, "FY Month No"),
+        fyMonthName:       getCell(r, h, "FY Month Name"),
+        fyQuarter:         getCellNum(r, h, "FY Quarter") as 1 | 2 | 3 | 4,
+      }))
+  })
 }
 
 // ─── Target Master ────────────────────────────────────────────────────────────
 
 export async function getTargetRecords(fy?: FinancialYear): Promise<TargetRecord[]> {
-  const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.TARGET_MASTER)
-  if (!rows.length) return []
-  const [headerRow, ...dataRows] = rows
-  const h = buildHeaderMap(headerRow)
+  try {
+    const records = await withMemo("target_records", async () => {
+      const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.TARGET_MASTER)
+      if (!rows.length) return []
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
 
-  const records: TargetRecord[] = dataRows
-    .filter((r) => getCell(r, h, "Buyer Company Name"))
-    .map((r) => ({
-      buyerCompanyName:           getCell(r, h, "Buyer Company Name"),
-      countries:                  getCell(r, h, "Countries"),
-      salesPerson:                getCell(r, h, "Sales Person"),
-      financialYear:              getCell(r, h, "Financial Year") as FinancialYear,
-      previousYearContainers:     getCellNum(r, h, "Previous Year Containers"),
-      currentYearTargetContainers:getCellNum(r, h, "Current Year Target Containers"),
-      targetType:                 getCell(r, h, "Target Type") as "Manual" | "Auto",
-      remarks:                    getCell(r, h, "Remarks"),
-    }))
-
-  return fy ? records.filter((r) => r.financialYear === fy) : records
+      return dataRows
+        .filter((r) => getCell(r, h, "Buyer Company Name"))
+        .map((r) => ({
+          buyerCompanyName:           getCell(r, h, "Buyer Company Name"),
+          countries:                  getCell(r, h, "Countries"),
+          salesPerson:                getCell(r, h, "Sales Person"),
+          financialYear:              getCell(r, h, "Financial Year") as FinancialYear,
+          previousYearContainers:     getCellNum(r, h, "Previous Year Containers"),
+          currentYearTargetContainers:getCellNum(r, h, "Current Year Target Containers"),
+          targetType:                 getCell(r, h, "Target Type") as "Manual" | "Auto",
+          remarks:                    getCell(r, h, "Remarks"),
+        }))
+    })
+    return fy ? records.filter((r: any) => r.financialYear === fy) : records
+  } catch (e) {
+    console.error("Target Master fetch error:", e)
+    return []
+  }
 }
 
 // ─── Buyer Master ─────────────────────────────────────────────────────────────
 
 export async function getBuyerMaster(): Promise<BuyerRecord[]> {
-  const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.BUYER_MASTER)
-  if (!rows.length) return []
-  const [headerRow, ...dataRows] = rows
-  const h = buildHeaderMap(headerRow)
+  return withMemo("buyer_master", async () => {
+    try {
+      const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.BUYER_MASTER)
+      if (!rows.length) return []
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
 
-  return dataRows
-    .filter((r) => getCell(r, h, "Buyer Company Name") || getCell(r, h, "Buyer Code"))
-    .map((r) => ({
-      buyerCode:        getCell(r, h, "Buyer Code"),
-      buyerCompanyName: getCell(r, h, "Buyer Company Name"),
-      countries:        getCell(r, h, "Countries"),
-      salesPerson:      getCell(r, h, "Sales Person"),
-      salesCoordinator: getCell(r, h, "Sales Cordinator"),
-      tier:             getCell(r, h, "Tier") as "TIER1" | "TIER2" | "TIER3" | undefined,
-      contactPerson:    getCell(r, h, "Contact Person"),
-      email:            getCell(r, h, "Email"),
-      phone:            getCell(r, h, "Phone"),
-      paymentTerms:     getCell(r, h, "Payment Terms"),
-    }))
+      return dataRows
+        .filter((r) => getCell(r, h, "Buyer Company Name") || getCell(r, h, "Buyer Code"))
+        .map((r) => ({
+          buyerCode:         getCell(r, h, "Buyer Code"),
+          buyerCompanyName:  getCell(r, h, "Buyer Company Name"),
+          countries:         getCell(r, h, "Countries"),
+          salesPerson:       getCell(r, h, "Sales Person"),
+          salesCoordinator:  getCell(r, h, "Sales Cordinator"),
+          tier:              getCell(r, h, "Tier") as "TIER1" | "TIER2" | "TIER3" | undefined,
+          contactPerson:     getCell(r, h, "Contact Person"),
+          email:             getCell(r, h, "Email"),
+          phone:             getCell(r, h, "Phone"),
+          paymentTerms:      getCell(r, h, "Payment Terms"),
+        }))
+    } catch (e) {
+      console.error("Buyer Master fetch error:", e)
+      return []
+    }
+  })
+}
+
+// ─── Canonical Buyer Master ──────────────────────────────────────────────────
+
+export async function getCanonicalBuyers(): Promise<CanonicalBuyer[]> {
+  if (!SHEETS.CANONICAL_MAP) return []
+  return withMemo("canonical_buyers", async () => {
+    try {
+      const rows = await readSheet(SHEETS.CANONICAL_MAP, SHEET_NAMES.CANONICAL_BUYER_MASTER)
+      if (!rows.length) return []
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
+
+      return dataRows
+        .filter((r) => getCell(r, h, "canonicalBuyerCode"))
+        .map((r) => ({
+          canonicalBuyerCode: getCell(r, h, "canonicalBuyerCode"),
+          canonicalBuyerName: getCell(r, h, "Buyer Name") || getCell(r, h, "canonicalBuyerName"),
+          buyerCode:          getCell(r, h, "buyerCode") || getCell(r, h, "canonicalBuyerCode"),
+          country:            getCell(r, h, "Country") || getCell(r, h, "country"),
+          segment:           (getCell(r, h, "Segment") || getCell(r, h, "segment") || "EXISTING") as BuyerSegment,
+          strategicRank:      getCellNum(r, h, "strategicRank") || 999,
+          isKeyAccount:       (getCell(r, h, "isKeyAccount") || "").toUpperCase() === "TRUE",
+          primaryOwner:       getCell(r, h, "Sales Person") || getCell(r, h, "primaryOwner"),
+          backupOwner:        getCell(r, h, "backupOwner"),
+          targetFY2026:       getCellNum(r, h, "Target Containers") || getCellNum(r, h, "targetFY2026"),
+          notes:              getCell(r, h, "Notes") || getCell(r, h, "notes"),
+          salesCoordinator:   getCell(r, h, "Sales Coordinator"),
+        }))
+    } catch (e) {
+      console.warn("Canonical Buyer Master fetch warning:", e)
+      return []
+    }
+  })
+}
+
+// ─── Buyer Alias Map ─────────────────────────────────────────────────────────
+
+export async function getBuyerAliasMap(): Promise<Map<string, string>> {
+  if (!SHEETS.CANONICAL_MAP) return new Map()
+  return withMemo("buyer_alias_map", async () => {
+    try {
+      const result = new Map<string, string>()
+      const rows = await readSheet(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP)
+      if (!rows.length) return result
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
+      for (const r of dataRows) {
+        const alias = getCell(r, h, "aliasName") || getCell(r, h, "Alias")
+        const code  = getCell(r, h, "canonicalBuyerCode") || getCell(r, h, "Canonical Buyer Code")
+        const conf  = getCell(r, h, "matchConfidence") || "HIGH"
+        if (alias && code && (conf === "HIGH" || conf === "MEDIUM" || conf === "TRUE")) {
+          result.set(alias.toLowerCase().trim(), code)
+        }
+      }
+      return result
+    } catch (e) {
+      console.warn("Buyer Alias Map fetch warning:", e)
+      return new Map()
+    }
+  })
+}
+
+// ─── Country Strategies ───────────────────────────────────────────────────────
+
+export async function getCountryStrategies(): Promise<CountryStrategy[]> {
+  if (!SHEETS.BUSINESS_PLAN) return []
+  return withMemo("country_strategies", async () => {
+    try {
+      const rows = await readSheet(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_STRATEGIES)
+      if (!rows.length) return []
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
+
+      return dataRows
+        .filter((r) => getCell(r, h, "Country"))
+        .map((r) => ({
+          country:       getCell(r, h, "Country"),
+          isDreamMarket: (getCell(r, h, "isDreamMarket") || getCell(r, h, "Is Dream Market")).toUpperCase() === "TRUE",
+          focusSegment:  getCell(r, h, "focusSegment"),
+          targetVariety: getCell(r, h, "targetVariety"),
+          strategyNotes: getCell(r, h, "strategyNotes") || getCell(r, h, "Strategy"),
+          updatedAt:     getCell(r, h, "updatedAt"),
+        }))
+    } catch (e) {
+      console.warn("Country Strategies fetch warning:", e)
+      return []
+    }
+  })
 }
 
 // ─── Country Targets ──────────────────────────────────────────────────────────
 
 export async function getCountryTargets(): Promise<CountryTarget[]> {
-  const rows = await readSheet(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_TARGET)
-  if (!rows.length) return []
-  const [headerRow, ...dataRows] = rows
-  const h = buildHeaderMap(headerRow)
+  try {
+    const rows = await readSheet(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_TARGET)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
 
-  return dataRows
-    .filter((r) => getCell(r, h, "County") || getCell(r, h, "Country"))
-    .map((r) => ({
-      country:              getCell(r, h, "County") || getCell(r, h, "Country"),
-      planned2024:          getCellNum(r, h, "2024 PLANNED"),
-      actual2024:           getCellNum(r, h, "2024 ACTUAL"),
-      planned2025:          getCellNum(r, h, "2025 PLANNED"),
-      actual2025:           getCellNum(r, h, "2025 ACTUAL"),
-      planned2026:          getCellNum(r, h, "2026 PLANNED"),
-      performanceStatus2025:getCell(r, h, "PERFORMANCE STATUS-2025"),
-      marketGrowth:         getCellNum(r, h, "MARKET GROWTH(2024 VS 2025)"),
-      totalClients2025:     getCellNum(r, h, "NO. OF TOTAL CLIENTS(2025)"),
-    }))
+    return dataRows
+      .filter((r) => getCell(r, h, "County") || getCell(r, h, "Country"))
+      .map((r) => ({
+        country:              getCell(r, h, "County") || getCell(r, h, "Country"),
+        planned2024:          getCellNum(r, h, "2024 PLANNED"),
+        actual2024:           getCellNum(r, h, "2024 ACTUAL"),
+        planned2025:          getCellNum(r, h, "2025 PLANNED"),
+        actual2025:           getCellNum(r, h, "2025 ACTUAL"),
+        planned2026:          getCellNum(r, h, "2026 PLANNED"),
+        performanceStatus2025:getCell(r, h, "PERFORMANCE STATUS-2025"),
+        marketGrowth:         getCellNum(r, h, "MARKET GROWTH(2024 VS 2025)"),
+        totalClients2025:     getCellNum(r, h, "NO. OF TOTAL CLIENTS(2025)"),
+      }))
+  } catch (e) {
+    console.error("Country Targets fetch error:", e)
+    return []
+  }
 }
 
 // ─── Business Plan Backend ────────────────────────────────────────────────────
 
 export async function getBusinessPlanBuyers(): Promise<BusinessPlanBuyer[]> {
-  const rows = await readSheet(SHEETS.BUSINESS_PLAN, SHEET_NAMES.BUSINESS_PLAN_BACKEND)
-  if (!rows.length) return []
-  const [headerRow, ...dataRows] = rows
-  const h = buildHeaderMap(headerRow)
+  try {
+    const rows = await readSheet(SHEETS.BUSINESS_PLAN, SHEET_NAMES.BUSINESS_PLAN_BACKEND)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
 
-  return dataRows
-    .filter((r) => getCell(r, h, "Buyer Name"))
-    .map((r, i) => ({
-      sNo:                 getCellNum(r, h, "S NO.") || i + 1,
-      country:             getCell(r, h, "COUNTRY"),
-      buyerName:           getCell(r, h, "Buyer Name"),
-      containers2025:      getCellNum(r, h, "No. Of Containers( 2025)"),
-      growthPercent:       parseFloat(getCell(r, h, "GROWTH %")) || 0,
-      containers2024:      getCellNum(r, h, "No. Of Containers (2024)"),
-      monthlyAvgVolume2025:getCellNum(r, h, "MONTHLY AVG VOLUMN(2 025)"),
-      targetContainer2026: getCellNum(r, h, "TARGET CONTAINER (2026)"),
-      remarks:             getCell(r, h, "remarks"),
-    }))
+    return dataRows
+      .filter((r) => getCell(r, h, "Buyer Name"))
+      .map((r, i) => ({
+        sNo:                 getCellNum(r, h, "S NO.") || i + 1,
+        country:             getCell(r, h, "COUNTRY"),
+        buyerName:           getCell(r, h, "Buyer Name"),
+        containers2025:      getCellNum(r, h, "No. Of Containers( 2025)"),
+        growthPercent:       parseFloat(getCell(r, h, "GROWTH %")) || 0,
+        containers2024:      getCellNum(r, h, "No. Of Containers (2024)"),
+        monthlyAvgVolume2025:getCellNum(r, h, "MONTHLY AVG VOLUMN(2 025)"),
+        targetContainer2026: getCellNum(r, h, "TARGET CONTAINER (2026)"),
+        remarks:             getCell(r, h, "remarks"),
+      }))
+  } catch (e) {
+    console.error("Business Plan Backend fetch error:", e)
+    return []
+  }
 }
 
 // ─── Weekly Reviews ───────────────────────────────────────────────────────────
@@ -833,26 +960,7 @@ export async function updateAliasMapping(params: {
   return true
 }
 
-// ─── Country Strategies (Dream Markets) ──────────────────────────────────────
 
-export async function getCountryStrategies(): Promise<CountryStrategy[]> {
-  try {
-    const rows = await readSheet(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_STRATEGIES)
-    if (!rows.length) return []
-    const [headerRow, ...dataRows] = rows
-    const h = buildHeaderMap(headerRow)
-    return dataRows
-      .filter((r) => getCell(r, h, "country"))
-      .map((r) => ({
-        country:        getCell(r, h, "country").toUpperCase(),
-        isDreamMarket:  getCell(r, h, "isDreamMarket").toUpperCase() === "TRUE",
-        priority:       getCellNum(r, h, "priority") || undefined,
-        strategicNotes: getCell(r, h, "strategicNotes") || undefined,
-        updatedBy:      getCell(r, h, "updatedBy") || undefined,
-        updatedAt:      getCell(r, h, "updatedAt") || undefined,
-      }))
-  } catch { return [] }
-}
 
 /**
  * Sets (or appends) the dream-market flag for a country.
@@ -1264,70 +1372,7 @@ export async function getMeetingComplianceForBuyer(params: {
   }
 }
 
-// ─── Canonical Buyer Map ──────────────────────────────────────────────────────
 
-/**
- * Reads CANONICAL_BUYER_MASTER from the optional canonical map sheet.
- * Returns [] gracefully when the sheet ID is not configured yet.
- */
-export async function getCanonicalBuyers(): Promise<CanonicalBuyer[]> {
-  if (!SHEETS.CANONICAL_MAP) return []
-  try {
-    const rows = await readSheet(SHEETS.CANONICAL_MAP, SHEET_NAMES.CANONICAL_BUYER_MASTER)
-    if (!rows.length) return []
-    const [headerRow, ...dataRows] = rows
-    const h = buildHeaderMap(headerRow)
-
-    return dataRows
-      .filter((r) => getCell(r, h, "canonicalBuyerCode"))
-      .map((r) => ({
-        canonicalBuyerCode: getCell(r, h, "canonicalBuyerCode"),
-        canonicalBuyerName: getCell(r, h, "Buyer Name"),
-        buyerCode:          getCell(r, h, "buyerCode") || getCell(r, h, "canonicalBuyerCode"),
-        country:            getCell(r, h, "Country"),
-        segment:           (getCell(r, h, "Segment") || "EXISTING") as BuyerSegment,
-        strategicRank:      getCellNum(r, h, "strategicRank"),
-        isKeyAccount:       getCell(r, h, "isKeyAccount").toUpperCase() === "TRUE",
-        primaryOwner:       getCell(r, h, "Sales Person"),
-        backupOwner:        getCell(r, h, "backupOwner"),
-        targetFY2026:       getCellNum(r, h, "Target Containers"),
-        notes:              getCell(r, h, "Notes"),
-        salesCoordinator:   getCell(r, h, "Sales Coordinator"),
-      }))
-  } catch {
-    return []
-  }
-}
-
-/**
- * Reads BUYER_ALIAS_MAP and returns a lookup map:
- *   normalised alias name → canonicalBuyerCode
- *
- * Returns empty Map when sheet ID is not configured.
- */
-export async function getBuyerAliasMap(): Promise<Map<string, string>> {
-  const result = new Map<string, string>()
-  if (!SHEETS.CANONICAL_MAP) return result
-  try {
-    const rows = await readSheet(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP)
-    if (!rows.length) return result
-    const [headerRow, ...dataRows] = rows
-    const h = buildHeaderMap(headerRow)
-
-    for (const r of dataRows) {
-      const alias = getCell(r, h, "aliasName")
-      const code  = getCell(r, h, "canonicalBuyerCode")
-      const conf  = getCell(r, h, "matchConfidence")
-      // Only use HIGH and MEDIUM confirmed matches
-      if (alias && code && (conf === "HIGH" || conf === "MEDIUM")) {
-        result.set(alias.toLowerCase().trim(), code)
-      }
-    }
-  } catch {
-    // fall through — return empty map
-  }
-  return result
-}
 
 // ─── Credentials ─────────────────────────────────────────────────────────────
 

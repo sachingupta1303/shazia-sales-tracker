@@ -92,6 +92,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
   const periodActive = !!(fyMonth || fyWeek || fyQuarter)
 
   const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState<PerformanceStatus | "">("")
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -126,6 +127,10 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
   if (!data)   return null
 
   const { kpis, countryBreakdown, filterOptions, meta } = data
+
+  const filteredCountryBreakdown = statusFilter 
+    ? countryBreakdown.filter(c => c.status === statusFilter)
+    : countryBreakdown
 
   return (
     <div className="space-y-6">
@@ -226,7 +231,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
             <option value="4">Q4 (Jan–Mar)</option>
           </select>
 
-          {(globalFilterCountry || globalFilterSP || variety || fyMonth || fyWeek || fyQuarter) && (
+          {(globalFilterCountry || globalFilterSP || variety || fyMonth || fyWeek || fyQuarter || statusFilter) && (
             <button
               onClick={() => { 
                 dispatch(setGlobalFilterCountry(""))
@@ -235,6 +240,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
                 dispatch(setFYMonth(""))
                 dispatch(setFYWeek(""))
                 dispatch(setFYQuarter(""))
+                setStatusFilter("")
               }}
               className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
             >
@@ -286,58 +292,69 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
           subLabel="FY Week"
           color="bg-blue-50 border-blue-200"
         />
-        <div className={`rounded-xl border p-5 shadow-sm ${STATUS_CARD_COLOR[kpis.status]}`}>
+        <div 
+          onClick={() => setStatusFilter(prev => prev === kpis.status ? "" : kpis.status)}
+          className={`rounded-xl border p-5 shadow-sm cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] ${STATUS_CARD_COLOR[kpis.status]} ${statusFilter === kpis.status ? "ring-2 ring-offset-2 ring-gray-400" : ""}`}
+        >
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Status</p>
           <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold border ${statusBg(kpis.status)}`}>
-            {kpis.status === "ACHIEVED" ? "✅ Achieved" : kpis.status === "MISSED" ? "❌ Missed" : "—"}
+            {kpis.status === "ACHIEVED" ? "✅ Achieved" : kpis.status === "MISSED" ? "❌ Missed" : kpis.status === "ON_TRACK" ? "🔵 On Track" : "—"}
           </span>
+          <p className="text-[10px] text-gray-400 mt-2 font-medium">Click to filter table</p>
         </div>
       </div>
 
       {/* Country Breakdown Table */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-800">Country-wise Performance</h2>
-          <span className="text-xs text-gray-400">
-            {countryBreakdown.length} countries · click row for buyer breakdown
-          </span>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <div className="flex items-center gap-3">
+            <h2 className="font-bold text-gray-800 text-sm uppercase tracking-wider">Country-wise Performance</h2>
+            {statusFilter && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border flex items-center gap-1 ${statusBg(statusFilter)}`}>
+                Filtering: {statusFilter}
+                <button onClick={() => setStatusFilter("")} className="ml-1 hover:text-red-600">✕</button>
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 font-medium italic">Click status badge to filter</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-12">#</th>
-                <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Country</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Prev Year</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Target</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Due Till W{kpis.currentFYWeek}</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actual</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Gap</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+              <tr className="bg-gray-50/50 border-b border-gray-100">
+                <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Country</th>
+                <th className="text-right px-5 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Target</th>
+                <th className="text-right px-5 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Actual</th>
+                <th className="text-right px-5 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Gap</th>
+                <th className="text-center px-5 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {countryBreakdown.slice((page - 1) * 10, page * 10).map((row, i) => (
-                <tr
-                  key={row.country}
-                  onClick={() => router.push(`/countries/${encodeURIComponent(row.country)}`)}
-                  className="hover:bg-green-50 cursor-pointer transition-colors"
+              {filteredCountryBreakdown.map((c) => (
+                <tr 
+                  key={c.country} 
+                  className="hover:bg-blue-50/30 transition-colors cursor-pointer group"
+                  onClick={() => router.push(`/countries/${encodeURIComponent(c.country)}`)}
                 >
-                  <td className="px-3 py-3 text-gray-400 tabular-nums text-center">{(page - 1) * 10 + i + 1}</td>
-                  <td className="px-3 py-3 font-medium text-gray-800">
-                    <span className="hover:text-green-700 hover:underline">{row.country}</span>
+                  <td className="px-5 py-3.5 font-bold text-gray-800 group-hover:text-blue-600 flex items-center gap-2">
+                    {c.country}
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-400">→</span>
                   </td>
-                  <td className="px-4 py-3 text-center text-gray-500 tabular-nums">{formatNumber(row.prevYear)}</td>
-                  <td className="px-4 py-3 text-center text-gray-700 tabular-nums">{formatNumber(row.target, 0)}</td>
-                  <td className="px-4 py-3 text-center text-gray-700 tabular-nums">{formatNumber(row.targetDue)}</td>
-                  <td className="px-4 py-3 text-center font-bold text-gray-900 tabular-nums">{formatNumber(row.actual)}</td>
-                  <td className={`px-4 py-3 text-center font-bold tabular-nums ${row.gap >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {(row.gap >= 0 ? "+" : "") + formatNumber(row.gap)}
+                  <td className="px-5 py-3.5 text-right tabular-nums text-gray-500 font-medium">{formatNumber(c.target, 0)}</td>
+                  <td className="px-5 py-3.5 text-right tabular-nums font-black text-gray-900">{formatNumber(c.actual, 1)}</td>
+                  <td className={`px-5 py-3.5 text-right tabular-nums font-bold ${c.gap >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    {c.gap >= 0 ? "+" : ""}{formatNumber(c.gap, 1)}
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusBg(row.status)}`}>
-                      {row.status === "ACHIEVED" ? "Achieved" : row.status === "MISSED" ? "Missed" : row.status === "NO_TARGET" ? "No Target" : row.status}
-                    </span>
+                  <td className="px-5 py-3.5 text-center">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setStatusFilter(prev => prev === c.status ? "" : c.status)
+                      }}
+                      className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black border transition-all hover:scale-110 active:scale-95 ${statusBg(c.status)}`}
+                    >
+                      {c.status}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -345,26 +362,21 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
             {countryBreakdown.length > 0 && (() => {
               const totals = countryBreakdown.reduce(
                 (acc, r) => ({
-                  prevYear:  acc.prevYear  + r.prevYear,
                   target:    acc.target    + r.target,
-                  targetDue: acc.targetDue + r.targetDue,
                   actual:    acc.actual    + r.actual,
                   gap:       acc.gap       + r.gap,
-                }), { prevYear: 0, target: 0, targetDue: 0, actual: 0, gap: 0 }
+                }), { target: 0, actual: 0, gap: 0 }
               )
               return (
                 <tfoot>
                   <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
-                    <td className="px-3 py-3" />
-                    <td className="px-3 py-3 text-gray-800 uppercase text-xs tracking-wide">Grand Total</td>
-                    <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{formatNumber(totals.prevYear)}</td>
-                    <td className="px-4 py-3 text-right text-gray-800 tabular-nums">{formatNumber(totals.target, 0)}</td>
-                    <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{formatNumber(totals.targetDue)}</td>
-                    <td className="px-4 py-3 text-right text-gray-900 tabular-nums">{formatNumber(totals.actual)}</td>
-                    <td className={`px-4 py-3 text-right tabular-nums ${totals.gap >= 0 ? "text-green-700" : "text-red-700"}`}>
-                      {(totals.gap >= 0 ? "+" : "") + formatNumber(totals.gap)}
+                    <td className="px-5 py-3 text-gray-800 uppercase text-xs tracking-wide">Grand Total</td>
+                    <td className="px-5 py-3 text-right text-gray-800 tabular-nums">{formatNumber(totals.target, 0)}</td>
+                    <td className="px-5 py-3 text-right text-gray-900 tabular-nums">{formatNumber(totals.actual, 1)}</td>
+                    <td className={`px-5 py-3 text-right tabular-nums ${totals.gap >= 0 ? "text-green-700" : "text-red-700"}`}>
+                      {(totals.gap >= 0 ? "+" : "") + formatNumber(totals.gap, 1)}
                     </td>
-                    <td className="px-4 py-3" />
+                    <td className="px-5 py-3" />
                   </tr>
                 </tfoot>
               )
