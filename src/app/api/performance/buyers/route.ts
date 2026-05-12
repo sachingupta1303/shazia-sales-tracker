@@ -217,13 +217,21 @@ export async function GET(req: Request) {
       }, {} as Record<string, number>),
     }
 
+    console.log(`[performance/buyers] fy=${fy} rows=${finalRows.length} (targets=${targets.length} filtered=${filteredTargets.length})`)
     return NextResponse.json({
       rows: finalRows,
       summary,
-      meta: { fy, prevFY, week, total: finalRows.length, generatedAt: new Date().toISOString() },
+      meta: {
+        fy, prevFY, week,
+        total:        finalRows.length,
+        sourceTargets: targets.length,
+        generatedAt:  new Date().toISOString(),
+      },
     })
   } catch (error) {
-    console.error("Buyer Performance API Error:", error)
-    return NextResponse.json({ error: "Failed to fetch performance data" }, { status: 500 })
+    const msg = error instanceof Error ? error.message : "Unknown error"
+    console.error("[performance/buyers] ERROR:", msg)
+    if (error instanceof Error && error.stack) console.error(error.stack)
+    return NextResponse.json({ error: `Failed to fetch performance data: ${msg}` }, { status: 500 })
   }
 }

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(netstat -ano)",
+      "Bash(powershell -Command \"Get-Process -Id 19976 -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, Path, StartTime | Format-List\")",
+      "Bash(cp \"C:/Users/hp/rice-export-tracker/.env.local\" \".env.local\" && ls -la .env.local && echo \"copied\")",
+      "Bash(echo \"---exit $? ---\")",
+      "Bash(echo \"---exit $?---\")",
+      "Bash(curl -s -c - http://localhost:3000)",
+      "Bash(curl -s --max-time 30 http://localhost:3000/api/debug/data-health -H \"Cookie: $\\(curl -s -c - http://localhost:3000)",
+      "Bash(awk '{print $6\"=\"$7}')",
+      "Bash(npm run *)",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -28,6 +28,12 @@ const ADMIN_TOOLS = [
     href:        "/alerts",
     icon:        "🔔",
   },
+  {
+    title:       "Email Reminders",
+    description: "80/20 meeting reminders · auto-send every 2 h · test SMTP · manual trigger",
+    href:        "/admin/email-reminders",
+    icon:        "📧",
+  },
 ]
 
 export default function AdminPage() {

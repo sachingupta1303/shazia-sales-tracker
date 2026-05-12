@@ -32,6 +32,12 @@ const NAV_ITEMS = [
     roles: ["SALES_PERSON", "MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
   },
   {
+    label: "80/20 Dashboard",
+    href: "/8020",
+    icon: "⭐",
+    roles: ["SALES_PERSON", "MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
+  },
+  {
     label: "Country Strategy",
     href: "/countries",
     icon: "🌍",
@@ -65,6 +71,12 @@ const NAV_ITEMS = [
     label: "Admin",
     href: "/admin",
     icon: "⚙️",
+    roles: ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"],
+  },
+  {
+    label: "Diagnostics",
+    href: "/diagnostics",
+    icon: "🩺",
     roles: ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"],
   },
 ]

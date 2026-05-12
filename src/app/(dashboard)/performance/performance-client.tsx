@@ -102,7 +102,7 @@ interface CoordResponse {
   filterOptions: { coordinators: string[] }
 }
 
-type Tab = "buyers" | "countries" | "salesperson" | "coordinator"
+type Tab = "buyers" | "countries" | "salesperson" | "coordinator" | "meetings"
 
 interface Props {
   userRole?: UserRole
@@ -129,6 +129,18 @@ const FY_MONTHS = [
   "April","May","June","July","August","September",
   "October","November","December","January","February","March",
 ]
+
+// Computed once at module load — covers the last 3 FYs + current
+function buildFYOptions(): string[] {
+  const today = new Date()
+  const currentYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1
+  return [0, -1, -2].map((offset) => {
+    const y = currentYear + offset
+    return `${y}-${String(y + 1).slice(-2)}`
+  })
+}
+const FY_OPTIONS = buildFYOptions()
+const DEFAULT_FY = FY_OPTIONS[0]
 
 // ── Filter Bar ──────────────────────────────────────────────────────────────
 
@@ -160,6 +172,12 @@ function FilterBar({
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filters</span>
+
+      {/* Financial year */}
+      <select value={filters.fy} onChange={(e) => set("fy", e.target.value)}
+              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 font-semibold bg-blue-50 text-blue-900 border-blue-200">
+        {FY_OPTIONS.map((f) => <option key={f} value={f}>FY {f}</option>)}
+      </select>
 
       {/* Period (mutually exclusive) */}
       <select value={filters.fyMonth} onChange={(e) => set("fyMonth", e.target.value)}
@@ -229,7 +247,7 @@ function FilterBar({
       {hasAny && (
         <button
           onClick={() => setFilters({
-            fy: filters.fy,
+            fy: filters.fy || DEFAULT_FY,
             fyMonth: "", fyWeek: "", fyQuarter: "",
             country: "", salesPerson: isSP ? filters.salesPerson : "",
             coordinator: "", segment: "", buyer: "",
@@ -267,10 +285,12 @@ function BuyerTab({ filters }: { filters: Filters }) {
   const router = useRouter()
   const [data, setData] = useState<BuyersResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [tablePage, setTablePage] = useState(1)
 
   const params = useMemo(() => {
     const p = new URLSearchParams()
+    if (filters.fy)          p.set("fy",          filters.fy)
     if (filters.country)     p.set("country",     filters.country)
     if (filters.salesPerson) p.set("salesPerson", filters.salesPerson)
     if (filters.segment)     p.set("segment",     filters.segment)
@@ -282,19 +302,53 @@ function BuyerTab({ filters }: { filters: Filters }) {
   }, [filters])
 
   useEffect(() => {
-    setLoading(true)
-    setTablePage(1)
+    setLoading(true); setError(null); setTablePage(1)
     fetch(`/api/performance/buyers?${params}`)
-      .then((r) => r.ok ? r.json() : null)
+      .then(async (r) => {
+        if (!r.ok) {
+          let msg = `Server returned ${r.status}`
+          try { const j = await r.json(); if (j?.error) msg = j.error } catch {}
+          throw new Error(msg)
+        }
+        return r.json()
+      })
       .then((d) => setData(d))
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
       .finally(() => setLoading(false))
   }, [params])
 
-  if (loading) return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => (
-    <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
-  ))}</div>
+  if (loading) return (
+    <div className="space-y-3">
+      <div className="text-xs text-gray-400 px-1">Loading from Google Sheets (first load may take a few seconds)…</div>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
+      ))}
+    </div>
+  )
 
-  if (!data) return <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-600 text-sm">Failed to load</div>
+  if (error) return (
+    <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700 text-sm">
+      <p className="font-semibold mb-1">Failed to load performance data</p>
+      <p className="text-xs">{error}</p>
+    </div>
+  )
+  if (!data) return null
+
+  if (data.rows.length === 0) return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-900 text-sm space-y-2">
+      <p className="font-semibold">No buyer rows match the current filters.</p>
+      <p className="text-xs leading-relaxed">
+        Check that <strong>TARGET_MASTER</strong> or the <strong>80/20 Buyers</strong> sheet has entries for FY <strong>{data.meta.fy}</strong>, or relax the filters above.
+        If you just opened the app, the first Google Sheets fetch may have failed silently — try the diagnostic page below.
+      </p>
+      <a
+        href="/diagnostics"
+        className="inline-flex items-center gap-1.5 mt-2 text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700 transition-colors"
+      >
+        🩺 Run Data Diagnostics →
+      </a>
+    </div>
+  )
 
   // Top 10 buyers by gap (most behind / ahead)
   const top10 = [...data.rows].slice(0, 10)
@@ -452,6 +506,7 @@ function CountryTab({ filters }: { filters: Filters }) {
 
   const params = useMemo(() => {
     const p = new URLSearchParams()
+    if (filters.fy)          p.set("fy",          filters.fy)
     if (filters.country)     p.set("country",     filters.country)
     if (filters.salesPerson) p.set("salesPerson", filters.salesPerson)
     if (filters.fyMonth)     p.set("fyMonth",     filters.fyMonth)
@@ -606,6 +661,7 @@ function SPTab({ filters }: { filters: Filters }) {
 
   const params = useMemo(() => {
     const p = new URLSearchParams()
+    if (filters.fy)          p.set("fy",          filters.fy)
     if (filters.country)     p.set("country",     filters.country)
     if (filters.salesPerson) p.set("salesPerson", filters.salesPerson)
     if (filters.fyMonth)     p.set("fyMonth",     filters.fyMonth)
@@ -879,7 +935,7 @@ export function PerformanceClient({ userRole, salesPerson, allSalesPersons, allC
   const [tab, setTab] = useState<Tab>("buyers")
   const [coordinators, setCoordinators] = useState<string[]>([])
   const [filters, setFilters] = useState<Filters>({
-    fy: "", fyMonth: "", fyWeek: "", fyQuarter: "",
+    fy: DEFAULT_FY, fyMonth: "", fyWeek: "", fyQuarter: "",
     country: "", salesPerson: salesPerson ?? "",
     coordinator: "", segment: "", buyer: "",
   })
@@ -889,12 +945,14 @@ export function PerformanceClient({ userRole, salesPerson, allSalesPersons, allC
     ? [
         { key: "buyers",    label: "👤 Buyer-wise" },
         { key: "countries", label: "🌍 Country-wise" },
+        { key: "meetings",  label: "🤝 Meeting Reports" },
       ]
     : [
         { key: "buyers",      label: "👤 Buyer-wise" },
         { key: "countries",   label: "🌍 Country-wise" },
         { key: "salesperson", label: "🧑‍💼 Sales Person" },
         { key: "coordinator", label: "📋 Coordinator" },
+        { key: "meetings",    label: "🤝 Meeting Reports" },
       ]
 
   const onCoordOptions = useCallback((opts: string[]) => setCoordinators(opts), [])
@@ -928,6 +986,356 @@ export function PerformanceClient({ userRole, salesPerson, allSalesPersons, allC
       {tab === "countries"   && <CountryTab     filters={filters} />}
       {tab === "salesperson" && !isSP && <SPTab filters={filters} />}
       {tab === "coordinator" && !isSP && <CoordinatorTab filters={filters} onCoordOptions={onCoordOptions} />}
+      {tab === "meetings"    && <MeetingReportsTab filters={filters} />}
+    </div>
+  )
+}
+
+// ── Meeting Reports Tab ─────────────────────────────────────────────────────
+
+interface MeetingsKpi {
+  totalBuyers: number; meetingsThisFY: number; meetingsThisMonth: number
+  meetingsToday: number; overdue: number; dueSoon: number; upcoming: number
+}
+interface MeetingsSpRow {
+  salesPerson: string; monitoredBuyers: number; meetingsDone: number
+  overdue: number; dueSoon: number; orderConfirmed: number
+}
+interface MeetingsTierRow {
+  tier: "TIER1" | "TIER2" | "TIER3"
+  monitoredBuyers: number; meetingsDone: number; overdue: number; dueSoon: number
+}
+interface MeetingsMonthly { month: string; label: string; count: number; orderConfirmed: number }
+interface RecentMeeting {
+  meetingId: string; buyerName: string; country: string; tier: string
+  responsiblePerson: string; salesCoordinator: string
+  historyId: string; meetingDate: string; outcome: string; notes: string
+  completedBy: string; createdAt: string
+}
+interface MeetingsResponse {
+  kpi: MeetingsKpi
+  outcomeCounts: Record<string, number>
+  bySalesPerson: MeetingsSpRow[]
+  byTier: MeetingsTierRow[]
+  monthly: MeetingsMonthly[]
+  recent: RecentMeeting[]
+  meta: { fy: string }
+}
+
+const OUTCOME_META: Record<string, { label: string; emoji: string; color: string }> = {
+  ORDER_CONFIRMED: { label: "Order Confirmed",  emoji: "🎉", color: "#16a34a" },
+  NEGOTIATING:     { label: "Negotiating",      emoji: "💬", color: "#2563eb" },
+  AWAITING_PI:     { label: "Awaiting PI",      emoji: "📄", color: "#7c3aed" },
+  FOLLOW_UP:       { label: "Follow-up",        emoji: "📅", color: "#d97706" },
+  NO_INTEREST:     { label: "No Interest",      emoji: "🚫", color: "#6b7280" },
+  OTHER:           { label: "Other",            emoji: "📝", color: "#94a3b8" },
+}
+
+const TIER_LABEL_LOCAL: Record<string, string> = {
+  TIER1: "Tier 1",
+  TIER2: "Tier 2",
+  TIER3: "Tier 3",
+}
+
+function MeetingReportsTab({ filters }: { filters: Filters }) {
+  const [data, setData] = useState<MeetingsResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [outcomeFilter, setOutcomeFilter] = useState<string>("")
+  const [tablePage, setTablePage] = useState(1)
+  const [tablePageSize, setTablePageSize] = useState(10)
+
+  const params = useMemo(() => {
+    const p = new URLSearchParams()
+    if (filters.salesPerson) p.set("salesPerson", filters.salesPerson)
+    if (outcomeFilter)       p.set("outcome",     outcomeFilter)
+    return p.toString()
+  }, [filters.salesPerson, outcomeFilter])
+
+  useEffect(() => {
+    setLoading(true); setError(null); setTablePage(1)
+    fetch(`/api/performance/meetings?${params}`)
+      .then(async (r) => {
+        if (!r.ok) {
+          let msg = `Server returned ${r.status}`
+          try { const j = await r.json(); if (j?.error) msg = j.error } catch {}
+          throw new Error(msg)
+        }
+        return r.json()
+      })
+      .then((d: MeetingsResponse) => setData(d))
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
+      .finally(() => setLoading(false))
+  }, [params])
+
+  if (loading) return (
+    <div className="space-y-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+      ))}
+    </div>
+  )
+
+  if (error) return (
+    <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700 text-sm">
+      <p className="font-semibold mb-1">Could not load meeting reports</p>
+      <p className="text-xs">{error}</p>
+    </div>
+  )
+
+  if (!data) return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-700 text-sm">No meeting data available.</div>
+  )
+
+  // Show prominent diagnostic banner when meetings are 0 — this is the symptom
+  // of a deeper data issue (80/20 sheet not parsing, cache holding empty, etc.)
+  const meetingsZeroBanner = data.kpi.totalBuyers === 0 ? (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-900 text-sm space-y-2">
+      <p className="font-semibold">⚠️ 0 monitored buyers — meeting data won&apos;t show until this is fixed.</p>
+      <p className="text-xs leading-relaxed">
+        The 80/20 sheet should contain buyers tagged with Tier 1/2/3. If you just opened the app,
+        the first Sheets fetch may have failed silently. Run the diagnostic to see what&apos;s actually being read.
+      </p>
+      <a
+        href="/diagnostics"
+        className="inline-flex items-center gap-1.5 mt-1 text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700 transition-colors"
+      >
+        🩺 Run Data Diagnostics →
+      </a>
+    </div>
+  ) : null
+
+  // Build outcome list sorted by count desc
+  const outcomeRows = Object.entries(data.outcomeCounts)
+    .map(([key, count]) => ({ key, count, meta: OUTCOME_META[key] ?? OUTCOME_META.OTHER }))
+    .sort((a, b) => b.count - a.count)
+  const totalOutcomes = outcomeRows.reduce((s, r) => s + r.count, 0)
+
+  // Recent meetings — pagination
+  const totalPages = Math.max(1, Math.ceil(data.recent.length / tablePageSize))
+  const safePage   = Math.min(tablePage, totalPages)
+  const pageRows   = data.recent.slice((safePage - 1) * tablePageSize, safePage * tablePageSize)
+
+  return (
+    <div className="space-y-4">
+      {meetingsZeroBanner}
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <SummaryCard label="Monitored Buyers" value={data.kpi.totalBuyers} sub={`${data.meta.fy}`} color="bg-white border-gray-200" />
+        <SummaryCard label="Meetings (FY)"   value={data.kpi.meetingsThisFY} sub="this financial year" color="bg-blue-50 border-blue-200" />
+        <SummaryCard label="This Month"      value={data.kpi.meetingsThisMonth} color="bg-green-50 border-green-200" />
+        <SummaryCard label="Today"           value={data.kpi.meetingsToday} color="bg-teal-50 border-teal-200" />
+        <SummaryCard label="Overdue"         value={data.kpi.overdue}  color={data.kpi.overdue > 0 ? "bg-red-50 border-red-200" : "bg-white border-gray-200"} />
+        <SummaryCard label="Due Soon"        value={data.kpi.dueSoon}  color="bg-amber-50 border-amber-200" />
+        <SummaryCard label="Upcoming"        value={data.kpi.upcoming} color="bg-gray-50 border-gray-200" />
+      </div>
+
+      {/* Charts: outcome + monthly trend */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Outcome Distribution</h3>
+          {outcomeRows.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={outcomeRows}
+                  dataKey="count"
+                  nameKey="meta.label"
+                  cx="50%" cy="50%"
+                  outerRadius={70}
+                  innerRadius={40}
+                  label={({ payload }: { payload?: typeof outcomeRows[number] }) =>
+                    payload ? `${payload.meta.label}: ${payload.count}` : ""
+                  }
+                >
+                  {outcomeRows.map((e) => <Cell key={e.key} fill={e.meta.color} />)}
+                </Pie>
+                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <div className="h-40 flex items-center justify-center text-gray-400 text-sm">No meetings logged yet</div>}
+          {/* Outcome filter chips */}
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            <button
+              onClick={() => setOutcomeFilter("")}
+              className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                outcomeFilter === "" ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}
+            >All ({totalOutcomes})</button>
+            {outcomeRows.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => setOutcomeFilter(outcomeFilter === r.key ? "" : r.key)}
+                className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                  outcomeFilter === r.key ? "text-white border-transparent font-semibold" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+                style={outcomeFilter === r.key ? { backgroundColor: r.meta.color } : {}}
+              >
+                {r.meta.emoji} {r.meta.label}: {r.count}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl p-4 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Monthly Meeting Trend (last 12 months)</h3>
+          {data.monthly.some((m) => m.count > 0) ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={data.monthly} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#9ca3af" }} />
+                <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} allowDecimals={false} />
+                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="count"          name="All Meetings"    fill="#14b8a6" radius={[3,3,0,0]} />
+                <Bar dataKey="orderConfirmed" name="Orders Confirmed" fill="#16a34a" radius={[3,3,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div className="h-40 flex items-center justify-center text-gray-400 text-sm">No meetings logged yet</div>}
+        </div>
+      </div>
+
+      {/* By Tier + By Salesperson side-by-side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <h3 className="text-sm font-semibold text-gray-700 px-4 py-3 border-b border-gray-100">By Tier</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Tier</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Buyers</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Meetings Done</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Overdue</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Due Soon</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {data.byTier.map((t) => (
+                <tr key={t.tier} className="hover:bg-gray-50">
+                  <td className="px-3 py-2.5 font-semibold text-gray-800">{TIER_LABEL_LOCAL[t.tier] ?? t.tier}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{t.monitoredBuyers}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums font-bold text-green-700">{t.meetingsDone}</td>
+                  <td className={`px-3 py-2.5 text-right tabular-nums ${t.overdue > 0 ? "text-red-600 font-bold" : "text-gray-400"}`}>{t.overdue}</td>
+                  <td className={`px-3 py-2.5 text-right tabular-nums ${t.dueSoon > 0 ? "text-amber-700 font-semibold" : "text-gray-400"}`}>{t.dueSoon}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <h3 className="text-sm font-semibold text-gray-700 px-4 py-3 border-b border-gray-100">By Sales Person</h3>
+          <div className="max-h-[280px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-gray-50">
+                <tr className="border-b border-gray-100">
+                  <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Sales Person</th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Buyers</th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Done</th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Orders</th>
+                  <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Overdue</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {data.bySalesPerson.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">No data</td></tr>
+                ) : data.bySalesPerson.map((r) => (
+                  <tr key={r.salesPerson} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-800 truncate max-w-[160px]" title={r.salesPerson}>{r.salesPerson}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.monitoredBuyers}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-bold text-green-700">{r.meetingsDone}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-blue-700">{r.orderConfirmed}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${r.overdue > 0 ? "text-red-600 font-bold" : "text-gray-400"}`}>{r.overdue}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent meeting log */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-700">Recent Meeting Log <span className="text-xs text-gray-400 font-normal">({data.recent.length} most recent)</span></h3>
+          {outcomeFilter && (
+            <span className="text-xs text-gray-500">Filtered by <strong>{OUTCOME_META[outcomeFilter]?.label ?? outcomeFilter}</strong></span>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Buyer</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Tier</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Outcome</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Output / Notes</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">By</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {pageRows.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400 text-sm">No meetings logged yet.</td></tr>
+              ) : pageRows.map((r) => {
+                const o = OUTCOME_META[r.outcome] ?? OUTCOME_META.OTHER
+                return (
+                  <tr key={r.historyId} className="hover:bg-gray-50">
+                    <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                      {new Date(r.meetingDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <p className="font-semibold text-gray-800 truncate max-w-[200px]">{r.buyerName}</p>
+                      <p className="text-[10px] text-gray-400">{r.country}</p>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <TierBadge tier={r.tier as BuyerTier} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                        style={{ backgroundColor: `${o.color}20`, color: o.color, borderColor: `${o.color}40` }}
+                      >
+                        {o.emoji} {o.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-gray-700 max-w-[320px]">
+                      <p className="line-clamp-2 whitespace-pre-wrap">{r.notes || <span className="text-gray-300">—</span>}</p>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{r.completedBy}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        {data.recent.length > tablePageSize && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-2.5 border-t border-gray-100 bg-gray-50">
+            <span className="text-xs text-gray-500 tabular-nums">
+              Showing <strong>{(safePage - 1) * tablePageSize + 1}–{Math.min(safePage * tablePageSize, data.recent.length)}</strong> of <strong>{data.recent.length}</strong>
+            </span>
+            <div className="flex items-center gap-2">
+              <select
+                value={tablePageSize}
+                onChange={(e) => setTablePageSize(parseInt(e.target.value, 10))}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white"
+              >
+                {[10, 25, 50].map((n) => <option key={n} value={n}>{n} / page</option>)}
+              </select>
+              <button
+                onClick={() => setTablePage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40"
+              >← Prev</button>
+              <span className="text-xs text-gray-600 tabular-nums">Page <strong>{safePage}</strong> / {totalPages}</span>
+              <button
+                onClick={() => setTablePage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40"
+              >Next →</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 import { ReduxProvider } from "@/components/providers/redux-provider";
+import { Toaster } from "sonner";
 
 export default function RootLayout({
   children,
@@ -31,6 +32,12 @@ export default function RootLayout({
     >
       <body className="h-full flex flex-col overflow-hidden overscroll-none">
         <ReduxProvider>{children}</ReduxProvider>
+        <Toaster
+          position="top-right"
+          richColors
+          closeButton
+          toastOptions={{ duration: 5000 }}
+        />
       </body>
     </html>
   );

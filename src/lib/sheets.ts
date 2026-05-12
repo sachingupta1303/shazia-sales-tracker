@@ -3,10 +3,12 @@ import { google } from "googleapis"
 // ─── Sheet IDs ────────────────────────────────────────────────────────────────
 
 export const SHEETS = {
-  SALES_TRACKING: process.env.SALES_TRACKING_SHEET_ID!,
-  BUSINESS_PLAN:  process.env.BUSINESS_PLAN_SHEET_ID!,
+  SALES_TRACKING:  process.env.SALES_TRACKING_SHEET_ID!,
+  BUSINESS_PLAN:   process.env.BUSINESS_PLAN_SHEET_ID!,
   // Optional — populated after canonical buyer map sheet is created
-  CANONICAL_MAP:  process.env.CANONICAL_BUYER_MAP_SHEET_ID || process.env.SALES_TRACKING_SHEET_ID || "",
+  CANONICAL_MAP:   process.env.CANONICAL_BUYER_MAP_SHEET_ID || process.env.SALES_TRACKING_SHEET_ID || "",
+  // 80/20 key account sheet — separate spreadsheet or falls back to SALES_TRACKING
+  EIGHTY_TWENTY:   process.env.EIGHTY_TWENTY_SHEET_ID || process.env.SALES_TRACKING_SHEET_ID!,
 }
 
 export const SHEET_NAMES = {
@@ -31,6 +33,12 @@ export const SHEET_NAMES = {
   COUNTRY_STRATEGIES:     "COUNTRY_STRATEGIES",
   TRAVEL_PLANS:           "TRAVEL_PLANS",
   CREDENTIALS:            "Credential",
+  // 80/20 Key Account buyers (note: trailing space is intentional — matches sheet tab name)
+  EIGHTY_TWENTY_BUYERS:   "80/20 buyers ",
+  // 80/20 Meeting tracking (auto-created tabs in SALES_TRACKING by default)
+  MEETING_SCHEDULE_8020:  "MEETING_SCHEDULE_8020",
+  MEETING_HISTORY_8020:   "MEETING_HISTORY_8020",
+  ALERT_LOG_8020:         "ALERT_LOG_8020",
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -51,13 +59,16 @@ function getSheetsClient() {
 }
 
 // ─── Cache Logic ──────────────────────────────────────────────────────────────
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes (300,000 ms)
-const cache = new Map<string, { data: string[][]; timestamp: number }>()
+// Two TTLs: 5 min for actual data, 10 sec for empty results (so a transient
+// Sheets API blip doesn't lock the entire app into "0 rows" for 5 minutes).
+const CACHE_TTL_MS          = 5 * 60 * 1000 // 5 minutes
+const CACHE_NEGATIVE_TTL_MS = 10 * 1000     // 10 seconds for empty / error results
+const cache = new Map<string, { data: string[][]; timestamp: number; ttl: number }>()
 
 function getCachedData(key: string): string[][] | null {
   const entry = cache.get(key)
   if (!entry) return null
-  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+  if (Date.now() - entry.timestamp > entry.ttl) {
     cache.delete(key)
     return null
   }
@@ -65,7 +76,96 @@ function getCachedData(key: string): string[][] | null {
 }
 
 function setCachedData(key: string, data: string[][]) {
-  cache.set(key, { data, timestamp: Date.now() })
+  const ttl = data.length === 0 ? CACHE_NEGATIVE_TTL_MS : CACHE_TTL_MS
+  cache.set(key, { data, timestamp: Date.now(), ttl })
+}
+
+/** Invalidate cached reads for a specific sheet tab (call after writes) */
+export function invalidateSheetCache(spreadsheetId: string, sheetName: string): void {
+  const prefix = `${spreadsheetId}:${sheetName}:`
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key)
+  }
+}
+
+// ─── Tab discovery + auto-bootstrap ──────────────────────────────────────────
+
+const tabListCache = new Map<string, { tabs: string[]; timestamp: number }>()
+const ensuredTabs  = new Set<string>()   // module-level memo: tabs we've verified/created
+
+/** Returns all tab names in a spreadsheet (cached for 60 seconds). */
+export async function listSheetTabs(spreadsheetId: string): Promise<string[]> {
+  const cached = tabListCache.get(spreadsheetId)
+  if (cached && Date.now() - cached.timestamp < 60_000) return cached.tabs
+
+  const sheets = getSheetsClient()
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  })
+  const tabs = (res.data.sheets ?? [])
+    .map((s) => s.properties?.title ?? "")
+    .filter(Boolean)
+  tabListCache.set(spreadsheetId, { tabs, timestamp: Date.now() })
+  return tabs
+}
+
+/**
+ * Ensures a tab exists in the spreadsheet. If it doesn't, creates it and
+ * writes the given header row. Idempotent + memoized.
+ */
+export async function ensureSheetExists(
+  spreadsheetId: string,
+  sheetName: string,
+  headers: string[]
+): Promise<void> {
+  const key = `${spreadsheetId}:${sheetName}`
+  if (ensuredTabs.has(key)) return
+
+  const tabs = await listSheetTabs(spreadsheetId)
+  if (tabs.includes(sheetName)) {
+    ensuredTabs.add(key)
+    return
+  }
+
+  const sheets = getSheetsClient()
+  // 1. Add the tab
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: sheetName } } }],
+    },
+  })
+  // 2. Write headers as row 1, bold
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [headers] },
+  })
+
+  // Invalidate the tab-list cache so subsequent calls see the new tab
+  tabListCache.delete(spreadsheetId)
+  ensuredTabs.add(key)
+  console.log(`[sheets] auto-created tab "${sheetName}"`)
+}
+
+/**
+ * Find an existing tab matching any of the candidate names (case-insensitive,
+ * whitespace-insensitive). Returns the actual name as it appears, or null.
+ */
+export async function findExistingTab(
+  spreadsheetId: string,
+  candidates: string[]
+): Promise<string | null> {
+  const tabs = await listSheetTabs(spreadsheetId)
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "")
+  for (const c of candidates) {
+    const target = norm(c)
+    const found = tabs.find((t) => norm(t) === target)
+    if (found) return found
+  }
+  return null
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
@@ -122,6 +222,48 @@ export async function updateSheetRow(
     range,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [values] },
+  })
+}
+
+// ─── Delete (row by 1-based index) ───────────────────────────────────────────
+
+/**
+ * Deletes a single row from the sheet (1-based, header is row 1). Uses the
+ * batchUpdate deleteDimension request so all subsequent rows shift up.
+ */
+export async function deleteSheetRow(
+  spreadsheetId: string,
+  sheetName: string,
+  rowIndex: number,   // 1-based, including header
+): Promise<void> {
+  const sheets = getSheetsClient()
+  // Need the numeric sheetId for batchUpdate.deleteDimension
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties",
+  })
+  const sheet = (meta.data.sheets ?? []).find(
+    (s) => s.properties?.title === sheetName
+  )
+  if (!sheet?.properties?.sheetId && sheet?.properties?.sheetId !== 0) {
+    throw new Error(`Sheet tab not found: ${sheetName}`)
+  }
+  const sheetId = sheet.properties.sheetId!
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: rowIndex - 1, // API is 0-based, exclusive end
+            endIndex:   rowIndex,
+          },
+        },
+      }],
+    },
   })
 }
 

@@ -8,13 +8,23 @@ import {
   appendToSheet,
   updateSheetRow,
   findRowIndexByKey,
+  deleteSheetRow,
   buildHeaderMap,
   getCell,
   getCellNum,
+  invalidateSheetCache,
+  ensureSheetExists,
+  findExistingTab,
   SHEETS,
   SHEET_NAMES,
 } from "./sheets"
-import { parsePIDate, getCurrentFY, getPreviousFY, isInFY } from "./fy-utils"
+import {
+  getInitialDueDate,
+  getMeetingDisplayStatus,
+  daysUntil,
+  buildInitialSchedule,
+} from "./8020-utils"
+import { parsePIDate, getCurrentFY, getPreviousFY, isInFY, getCurrentFYWeek, targetDueTillWeek, getStatus } from "./fy-utils"
 import type {
   PIRecord,
   TargetRecord,
@@ -40,6 +50,12 @@ import type {
   TravelStatus,
   Variety,
   FinancialYear,
+  Buyer8020,
+  Tier8020All,
+  MeetingSchedule,
+  MeetingHistoryEntry,
+  PerformanceStatus,
+  OthersBuyerSummary,
 } from "@/types"
 
 // ─── Meeting target rules per segment ────────────────────────────────────────
@@ -55,16 +71,68 @@ export const MEETING_TARGET_BY_SEGMENT: Record<BuyerSegment, number> = {
 }
 
 // ─── Memoization Layer (Performance Optimization) ──────────────────────────
-const cache = new Map<string, { data: any; timestamp: number }>()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+//
+// Two-tier TTL: most reference data (PI / Buyer Master / Targets) is read-mostly
+// and can live for 5 minutes. The 80/20 meeting state mutates on every "Done"
+// click, so it gets a short TTL with an explicit invalidate-on-write path.
+//
+// CRITICAL: empty/zero-length results are NOT cached at the full TTL. They get
+// a 10-second "negative cache" so we re-try shortly after. Otherwise a transient
+// Google Sheets API blip on cold-start would lock the entire app into "0 data"
+// for 5 minutes.
+const cache = new Map<string, { data: any; timestamp: number; ttl: number }>()
+const DEFAULT_TTL  = 5 * 60 * 1000  // 5 minutes (reference data, non-empty)
+const SHORT_TTL    = 30 * 1000      // 30 seconds (mutable 80/20 state)
+const NEGATIVE_TTL = 10 * 1000      // 10 seconds (empty / suspicious results)
 
-async function withMemo<T>(key: string, fn: () => Promise<T>): Promise<T> {
+// In-flight promises de-dup concurrent identical requests so we never hammer
+// Sheets twice for the same key when two requests land in the same tick.
+const inflight = new Map<string, Promise<unknown>>()
+
+function isEmptyResult(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  if (Array.isArray(value)) return value.length === 0
+  if (value instanceof Map || value instanceof Set) return value.size === 0
+  return false
+}
+
+async function withMemo<T>(
+  key: string,
+  fn: () => Promise<T>,
+  ttl: number = DEFAULT_TTL,
+): Promise<T> {
   const now = Date.now()
   const entry = cache.get(key)
-  if (entry && now - entry.timestamp < CACHE_TTL) return entry.data
-  const data = await fn()
-  cache.set(key, { data, timestamp: now })
-  return data
+  if (entry && now - entry.timestamp < entry.ttl) return entry.data
+
+  // De-dup concurrent calls for the same key
+  const existingInflight = inflight.get(key)
+  if (existingInflight) return existingInflight as Promise<T>
+
+  const promise = (async () => {
+    try {
+      const data = await fn()
+      // Don't cache empty/zero results at full TTL — they're almost always
+      // transient errors. Negative-cache them briefly so retries are fast.
+      const effectiveTtl = isEmptyResult(data) ? NEGATIVE_TTL : ttl
+      cache.set(key, { data, timestamp: now, ttl: effectiveTtl })
+      return data
+    } finally {
+      inflight.delete(key)
+    }
+  })()
+  inflight.set(key, promise)
+  return promise
+}
+
+/** Drop one or more memo keys (call after a write so the next read is fresh). */
+export function invalidateMemo(...keys: string[]): void {
+  for (const k of keys) cache.delete(k)
+}
+
+/** Drop ALL memo keys — used by the diagnostic refresh button. */
+export function invalidateAllMemo(): void {
+  cache.clear()
 }
 
 // ─── PI Backend Master ────────────────────────────────────────────────────────
@@ -116,25 +184,58 @@ export async function getPIRecords(): Promise<PIRecord[]> {
 export async function getTargetRecords(fy?: FinancialYear): Promise<TargetRecord[]> {
   try {
     const records = await withMemo("target_records", async () => {
-      const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.TARGET_MASTER)
-      if (!rows.length) return []
-      const [headerRow, ...dataRows] = rows
-      const h = buildHeaderMap(headerRow)
-
-      return dataRows
-        .filter((r) => getCell(r, h, "Buyer Company Name"))
-        .map((r) => ({
-          buyerCompanyName:           getCell(r, h, "Buyer Company Name"),
-          countries:                  getCell(r, h, "Countries"),
-          salesPerson:                getCell(r, h, "Sales Person"),
-          financialYear:              getCell(r, h, "Financial Year") as FinancialYear,
-          previousYearContainers:     getCellNum(r, h, "Previous Year Containers"),
-          currentYearTargetContainers:getCellNum(r, h, "Current Year Target Containers"),
-          targetType:                 getCell(r, h, "Target Type") as "Manual" | "Auto",
-          remarks:                    getCell(r, h, "Remarks"),
+      // ── Primary source: "80/20 Buyers" sheet (per user directive 2026-05-12) ──
+      // The 80/20 sheet now drives targets for the whole app. TARGET_MASTER
+      // is used as a fallback for any buyers not yet in the 80/20 sheet.
+      const buyers8020 = await get8020Buyers()
+      const primary: TargetRecord[] = buyers8020
+        .filter((b) => b.annualTarget > 0)
+        .map((b): TargetRecord => ({
+          buyerCompanyName:            b.buyerName,
+          countries:                   b.country,
+          salesPerson:                 b.responsiblePerson,
+          financialYear:               getCurrentFY(),
+          previousYearContainers:      0,   // not tracked in 80/20 sheet
+          currentYearTargetContainers: b.annualTarget,
+          targetType:                  "Manual",
+          remarks:                     `Tier: ${b.tier}`,
         }))
+
+      // Build a lookup set for primary buyers (name+country, normalized)
+      const primaryKeys = new Set(
+        primary.map((p) => `${p.buyerCompanyName.toLowerCase().trim()}||${p.countries.toLowerCase().trim()}`)
+      )
+
+      // ── Fallback: TARGET_MASTER sheet for buyers not in 80/20 ────────────
+      let fallback: TargetRecord[] = []
+      try {
+        const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.TARGET_MASTER)
+        if (rows.length) {
+          const [headerRow, ...dataRows] = rows
+          const h = buildHeaderMap(headerRow)
+          fallback = dataRows
+            .filter((r) => getCell(r, h, "Buyer Company Name"))
+            .map((r): TargetRecord => ({
+              buyerCompanyName:           getCell(r, h, "Buyer Company Name"),
+              countries:                  getCell(r, h, "Countries"),
+              salesPerson:                getCell(r, h, "Sales Person"),
+              financialYear:              getCell(r, h, "Financial Year") as FinancialYear,
+              previousYearContainers:     getCellNum(r, h, "Previous Year Containers"),
+              currentYearTargetContainers:getCellNum(r, h, "Current Year Target Containers"),
+              targetType:                 getCell(r, h, "Target Type") as "Manual" | "Auto",
+              remarks:                    getCell(r, h, "Remarks"),
+            }))
+            .filter((r) => !primaryKeys.has(
+              `${r.buyerCompanyName.toLowerCase().trim()}||${r.countries.toLowerCase().trim()}`
+            ))
+        }
+      } catch (e) {
+        console.error("TARGET_MASTER fallback fetch error:", e)
+      }
+
+      return [...primary, ...fallback]
     })
-    return fy ? records.filter((r: any) => r.financialYear === fy) : records
+    return fy ? records.filter((r: TargetRecord) => r.financialYear === fy) : records
   } catch (e) {
     console.error("Target Master fetch error:", e)
     return []
@@ -1460,4 +1561,709 @@ export function classifyBuyerTiers<T extends { targetContainer2026: number; buye
       pct <= 0.8 ? "TIER1" : pct <= 0.95 ? "TIER2" : "TIER3"
     return { ...buyer, tier }
   })
+}
+
+// ─── 80/20 Buyers Sheet ───────────────────────────────────────────────────────
+
+export async function get8020Buyers(): Promise<Buyer8020[]> {
+  return withMemo("buyers_8020", async () => {
+    try {
+      // Tab name may have trailing space, different casing, or "80-20"/"80_20" variations
+      const tabName = await findExistingTab(SHEETS.EIGHTY_TWENTY, [
+        SHEET_NAMES.EIGHTY_TWENTY_BUYERS,
+        "80/20 Buyers",
+        "80/20 buyers",
+        "80/20",
+        "80-20 buyers",
+        "8020 buyers",
+        "EIGHTY_TWENTY_BUYERS",
+      ])
+      if (!tabName) {
+        console.error("[data] Could not find a tab matching '80/20 buyers' in spreadsheet")
+        return []
+      }
+      const rows = await readSheet(SHEETS.EIGHTY_TWENTY, tabName)
+      if (!rows.length) return []
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
+      // Case-insensitive lookup map (handles "resposible mail", "sales cood mail", etc.)
+      const hLower: Record<string, number> = {}
+      for (const [key, idx] of Object.entries(h)) hLower[key.toLowerCase()] = idx
+
+      function col(r: string[], ...names: string[]): string {
+        for (const name of names) {
+          const idx = hLower[name.toLowerCase()]
+          if (idx !== undefined && (r[idx] ?? "").trim()) return r[idx].trim()
+        }
+        return ""
+      }
+      function colNum(r: string[], ...names: string[]): number {
+        const v = col(r, ...names)
+        return v ? parseFloat(v.replace(/,/g, "")) || 0 : 0
+      }
+
+      // Normalize tier — handles "T-1", "T- 2", "TIER1", "1", "T1", etc.
+      function parseTier(raw: string): Tier8020All {
+        const n = raw.replace(/[^a-z0-9]/gi, "").toUpperCase()
+        if (n === "T1" || n === "TIER1" || n === "1") return "TIER1"
+        if (n === "T2" || n === "TIER2" || n === "2") return "TIER2"
+        if (n === "T3" || n === "TIER3" || n === "3") return "TIER3"
+        return "OTHERS"
+      }
+
+      const seen = new Set<string>()   // dedupe by (buyerName + country)
+      const out: Buyer8020[] = []
+
+      for (const r of dataRows) {
+        const buyerName = col(r,
+          "Buyer Company Name", "Buyer Name", "Buyer", "Company Name", "Company")
+        if (!buyerName) continue
+
+        const country = col(r, "Countries", "Country", "Market")
+        const dedupeKey = `${buyerName.toLowerCase()}||${country.toLowerCase()}`
+        if (seen.has(dedupeKey)) continue
+        seen.add(dedupeKey)
+
+        const tier = parseTier(col(r, "Tier", "Classification", "Category"))
+
+        const targetContainers = colNum(r,
+          "Current Year Target Containers",
+          "Target Containers", "Target", "Containers Target")
+        const annualTarget     = colNum(r,
+          "Annual Target",
+          "Current Year Target Containers",
+          "Target Containers", "Target")
+
+        out.push({
+          buyerName,
+          country,
+          tier,
+          responsiblePerson: col(r,
+            "Resposible",                 // user's actual column (typo + trailing space, trimmed by buildHeaderMap)
+            "Responsible Person", "Sales Person", "Owner", "Responsible"),
+          responsibleEmail:  col(r,
+            "resposible mail", "Resposible mail",
+            "Responsible Person Email", "Responsible Email",
+            "Sales Email", "Owner Email"),
+          salesCoordinator:  col(r,
+            "sales Coordinators", "Sales Coordinators",
+            "Sales Coordinator", "Coordinator"),
+          coordinatorEmail:  col(r,
+            "sales cood mail", "Sales cood mail",
+            "Sales Coordinator Email", "Coordinator Email"),
+          targetContainers,
+          annualTarget:      annualTarget || targetContainers,
+          notes:             col(r,
+            "Actions points", "Action points",
+            "Notes", "Remarks"),
+        })
+      }
+      return out
+    } catch (e) {
+      console.error("[data] 80/20 buyers fetch error:", e)
+      return []
+    }
+  })
+}
+
+// ─── 80/20 Meeting Schedule / History / Alerts (Google Sheets) ────────────────
+// Three sheet tabs (auto-created on first write in the SALES_TRACKING spreadsheet):
+//
+//   MEETING_SCHEDULE_8020 — mutable, one row per Tier-1/2/3 buyer:
+//     ID | Buyer Name | Country | Last Meeting Date | Next Due Date | Meeting Remarks | Updated At
+//
+//   MEETING_HISTORY_8020 — append-only completed-meeting log:
+//     ID | Meeting ID | Buyer Name | Country | Meeting Date | Completed By | Notes | Created At
+//
+//   ALERT_LOG_8020 — append-only email-sent dedup log:
+//     ID | Meeting ID | Buyer Name | Alert Date | Email To | Status | Created At
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Stable, deterministic meeting ID from buyer name + country */
+export function buildMeetingId(buyerName: string, country: string): string {
+  const slug = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+  return `m_${slug(buyerName)}__${slug(country)}`
+}
+
+function uniqueId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+interface MeetingScheduleRow {
+  id: string
+  buyerName: string
+  country: string
+  lastMeetingDate: string  // YYYY-MM-DD or ""
+  nextDueDate: string      // YYYY-MM-DD
+  meetingRemarks: string
+  updatedAt: string        // ISO
+}
+
+interface MeetingHistoryRow {
+  id: string
+  meetingId: string
+  buyerName: string
+  country: string
+  meetingDate: string
+  completedBy: string
+  outcome: string       // MeetingOutcome enum value, stored as plain string
+  notes: string
+  createdAt: string
+}
+
+interface AlertLogRow {
+  id: string
+  meetingId: string
+  buyerName: string
+  alertDate: string  // YYYY-MM-DD
+  emailTo: string
+  status: string
+  createdAt: string
+}
+
+// Headers for the auto-created tracking tabs (kept here so creation + read align)
+const SCHEDULE_HEADERS = [
+  "ID", "Buyer Name", "Country",
+  "Last Meeting Date", "Next Due Date", "Meeting Remarks", "Updated At",
+]
+const HISTORY_HEADERS = [
+  "ID", "Meeting ID", "Buyer Name", "Country",
+  "Meeting Date", "Completed By", "Outcome", "Notes", "Created At",
+]
+const ALERT_HEADERS = [
+  "ID", "Meeting ID", "Buyer Name", "Alert Date", "Email To", "Status", "Created At",
+]
+
+async function getMeetingScheduleRows(): Promise<MeetingScheduleRow[]> {
+  try {
+    await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020, SCHEDULE_HEADERS)
+    const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
+    return dataRows
+      .filter((r) => getCell(r, h, "ID"))
+      .map((r) => ({
+        id:              getCell(r, h, "ID"),
+        buyerName:       getCell(r, h, "Buyer Name"),
+        country:         getCell(r, h, "Country"),
+        lastMeetingDate: getCell(r, h, "Last Meeting Date"),
+        nextDueDate:     getCell(r, h, "Next Due Date"),
+        meetingRemarks:  getCell(r, h, "Meeting Remarks"),
+        updatedAt:       getCell(r, h, "Updated At"),
+      }))
+  } catch {
+    return []
+  }
+}
+
+async function getMeetingHistoryRows(): Promise<MeetingHistoryRow[]> {
+  try {
+    await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, HISTORY_HEADERS)
+    const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
+    return dataRows
+      .filter((r) => getCell(r, h, "ID"))
+      .map((r) => ({
+        id:          getCell(r, h, "ID"),
+        meetingId:   getCell(r, h, "Meeting ID"),
+        buyerName:   getCell(r, h, "Buyer Name"),
+        country:     getCell(r, h, "Country"),
+        meetingDate: getCell(r, h, "Meeting Date"),
+        completedBy: getCell(r, h, "Completed By"),
+        outcome:     getCell(r, h, "Outcome") || "OTHER",
+        notes:       getCell(r, h, "Notes"),
+        createdAt:   getCell(r, h, "Created At"),
+      }))
+  } catch {
+    return []
+  }
+}
+
+export async function getAlertLogRows(alertDate?: string): Promise<AlertLogRow[]> {
+  try {
+    await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.ALERT_LOG_8020, ALERT_HEADERS)
+    const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.ALERT_LOG_8020)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
+    const all = dataRows
+      .filter((r) => getCell(r, h, "ID"))
+      .map((r) => ({
+        id:         getCell(r, h, "ID"),
+        meetingId:  getCell(r, h, "Meeting ID"),
+        buyerName:  getCell(r, h, "Buyer Name"),
+        alertDate:  getCell(r, h, "Alert Date"),
+        emailTo:    getCell(r, h, "Email To"),
+        status:     getCell(r, h, "Status"),
+        createdAt:  getCell(r, h, "Created At"),
+      }))
+    return alertDate ? all.filter((a) => a.alertDate === alertDate) : all
+  } catch {
+    return []
+  }
+}
+
+/** Append one or more new schedule rows. Caller ensures rows don't already exist. */
+async function appendMeetingSchedules(rows: MeetingScheduleRow[]): Promise<void> {
+  if (!rows.length) return
+  await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020, SCHEDULE_HEADERS)
+  await appendToSheet(
+    SHEETS.SALES_TRACKING,
+    SHEET_NAMES.MEETING_SCHEDULE_8020,
+    rows.map((r) => [
+      r.id, r.buyerName, r.country,
+      r.lastMeetingDate, r.nextDueDate, r.meetingRemarks, r.updatedAt,
+    ])
+  )
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020)
+}
+
+/** Update an existing schedule row identified by ID. */
+async function updateMeetingScheduleRow(
+  id: string,
+  updates: Partial<MeetingScheduleRow>
+): Promise<boolean> {
+  const rowIdx = await findRowIndexByKey(
+    SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020, "ID", id
+  )
+  if (rowIdx === -1) return false
+
+  const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020)
+  const h = buildHeaderMap(rows[0])
+  const row = [...rows[rowIdx - 1]]
+
+  const set = (col: string, val: string | undefined) => {
+    const idx = h[col]
+    if (idx === undefined || val === undefined) return
+    while (row.length <= idx) row.push("")
+    row[idx] = val
+  }
+  set("Buyer Name",         updates.buyerName)
+  set("Country",            updates.country)
+  set("Last Meeting Date",  updates.lastMeetingDate)
+  set("Next Due Date",      updates.nextDueDate)
+  set("Meeting Remarks",    updates.meetingRemarks)
+  set("Updated At",         updates.updatedAt ?? new Date().toISOString())
+
+  await updateSheetRow(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020, rowIdx, row)
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020)
+  return true
+}
+
+export async function addMeetingHistoryEntry(entry: {
+  meetingId: string; buyerName: string; country: string
+  meetingDate: string; completedBy: string; outcome?: string; notes: string
+}): Promise<string> {
+  await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, HISTORY_HEADERS)
+  const id = uniqueId("h")
+  const createdAt = new Date().toISOString()
+  await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, [[
+    id, entry.meetingId, entry.buyerName, entry.country,
+    entry.meetingDate, entry.completedBy, entry.outcome ?? "OTHER", entry.notes, createdAt,
+  ]])
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020)
+  return id
+}
+
+/** Batch-append many history entries in a single Sheets API call (rate-limit friendly). */
+async function appendMeetingHistoryBatch(entries: {
+  meetingId: string; buyerName: string; country: string
+  meetingDate: string; completedBy: string; outcome?: string; notes: string
+}[]): Promise<void> {
+  if (!entries.length) return
+  await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, HISTORY_HEADERS)
+  const createdAt = new Date().toISOString()
+  const rows = entries.map((e) => [
+    uniqueId("h"), e.meetingId, e.buyerName, e.country,
+    e.meetingDate, e.completedBy, e.outcome ?? "OTHER", e.notes, createdAt,
+  ])
+  await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, rows)
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020)
+}
+
+/**
+ * Remove a single history entry by its ID. Used by the Undo flow.
+ * Returns the deleted entry so the caller can recompute the schedule.
+ */
+async function deleteMeetingHistoryById(historyId: string): Promise<MeetingHistoryRow | null> {
+  const rows = await getMeetingHistoryRows()
+  const target = rows.find((r) => r.id === historyId)
+  if (!target) return null
+  const rowIdx = await findRowIndexByKey(
+    SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, "ID", historyId
+  )
+  if (rowIdx === -1) return null
+  await deleteSheetRow(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, rowIdx)
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020)
+  return target
+}
+
+export async function addAlertLogEntry(entry: {
+  meetingId: string; buyerName: string; alertDate: string
+  emailTo: string; status: string
+}): Promise<string> {
+  await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.ALERT_LOG_8020, ALERT_HEADERS)
+  const id = uniqueId("a")
+  const createdAt = new Date().toISOString()
+  await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.ALERT_LOG_8020, [[
+    id, entry.meetingId, entry.buyerName,
+    entry.alertDate, entry.emailTo, entry.status, createdAt,
+  ]])
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.ALERT_LOG_8020)
+  return id
+}
+
+/**
+ * Main read for the 80/20 module.
+ *
+ * Joins:
+ *  - "80/20 Buyers" sheet (targets, tier, owner, coordinator)
+ *  - MEETING_SCHEDULE_8020 (last meeting / next due date)
+ *  - MEETING_HISTORY_8020 (audit trail)
+ *  - PI_BACKEND_MASTER (actuals = sum of current-FY containers per buyer)
+ *
+ * Returns enriched MeetingSchedule[] with real performance data.
+ */
+export async function getMeetingSchedules(): Promise<MeetingSchedule[]> {
+  return withMemo("meeting_schedules", async () => {
+  const [buyers8020, scheduleRows, historyRows, allPI] = await Promise.all([
+    get8020Buyers(),
+    getMeetingScheduleRows(),
+    getMeetingHistoryRows(),
+    getPIRecords(),
+  ])
+
+  const buyers = buyers8020.filter((b) => b.tier !== "OTHERS")
+  if (!buyers.length) return []
+
+  // ── Schedule row sync (append-only for new buyers) ─────────────────────────
+  // For each new buyer, build a staggered initial schedule with auto-done
+  // backlog history (so they don't appear permanently overdue).
+  const existingById = new Map(scheduleRows.map((s) => [s.id, s]))
+  const toCreate: MeetingScheduleRow[] = []
+  const backlogHistoryToAppend: { meetingId: string; buyerName: string; country: string; meetingDate: string; notes: string }[] = []
+
+  for (const b of buyers) {
+    const id = buildMeetingId(b.buyerName, b.country)
+    if (!existingById.has(id)) {
+      const bootstrap = buildInitialSchedule(b.tier, b.buyerName)
+      const row: MeetingScheduleRow = {
+        id,
+        buyerName:       b.buyerName,
+        country:         b.country,
+        lastMeetingDate: bootstrap.lastMeetingDate ?? "",
+        nextDueDate:     bootstrap.nextDueDate,
+        meetingRemarks:  bootstrap.history.length > 0 ? "Auto-bootstrapped on system init" : "",
+        updatedAt:       new Date().toISOString(),
+      }
+      toCreate.push(row)
+      existingById.set(id, row)
+      // Queue history entries for batch append
+      for (const h of bootstrap.history) {
+        backlogHistoryToAppend.push({
+          meetingId:   id,
+          buyerName:   b.buyerName,
+          country:     b.country,
+          meetingDate: h.meetingDate,
+          notes:       h.notes,
+        })
+      }
+    }
+  }
+  if (toCreate.length) await appendMeetingSchedules(toCreate)
+  // Batch-append backlog history (single Sheets API call, rate-limit friendly)
+  if (backlogHistoryToAppend.length) {
+    await appendMeetingHistoryBatch(
+      backlogHistoryToAppend.map((h) => ({
+        meetingId:   h.meetingId,
+        buyerName:   h.buyerName,
+        country:     h.country,
+        meetingDate: h.meetingDate,
+        completedBy: "system",
+        notes:       h.notes,
+      }))
+    )
+  }
+  // Re-read history if we appended any (else use existing)
+  const finalHistoryRows = backlogHistoryToAppend.length > 0
+    ? await getMeetingHistoryRows()
+    : historyRows
+
+  // ── Build history index ───────────────────────────────────────────────────
+  const historyByMeetingId = new Map<string, MeetingHistoryRow[]>()
+  for (const h of finalHistoryRows) {
+    if (!historyByMeetingId.has(h.meetingId)) historyByMeetingId.set(h.meetingId, [])
+    historyByMeetingId.get(h.meetingId)!.push(h)
+  }
+
+  // ── Build PI buyer index (current FY only) ─────────────────────────────────
+  const currentFY   = getCurrentFY()
+  const currentWeek = getCurrentFYWeek()
+  const currentFYPI = filterPIByFY(allPI, currentFY)
+
+  const normName = (s: string) => s.toLowerCase().trim()
+  const piByBuyer = new Map<string, { containers: number; lastOrderDate: string; orderCount: number }>()
+  for (const r of currentFYPI) {
+    const key = normName(r.buyerCompanyName)
+    if (!piByBuyer.has(key)) piByBuyer.set(key, { containers: 0, lastOrderDate: "", orderCount: 0 })
+    const e = piByBuyer.get(key)!
+    e.containers  += r.totalContainers
+    e.orderCount  += 1
+    if (r.piDate > e.lastOrderDate) e.lastOrderDate = r.piDate
+  }
+
+  // ── Merge + enrich each monitored buyer ────────────────────────────────────
+  return buyers.map((b): MeetingSchedule => {
+    const id    = buildMeetingId(b.buyerName, b.country)
+    const sched = existingById.get(id)!
+    const hist  = (historyByMeetingId.get(id) ?? [])
+      .sort((a, z) => z.meetingDate.localeCompare(a.meetingDate))
+    const nextDueDateObj = new Date(sched.nextDueDate)
+
+    // Performance from PI
+    const pi             = piByBuyer.get(normName(b.buyerName))
+    const target         = b.annualTarget
+    const actual         = pi?.containers ?? 0
+    const targetDue      = targetDueTillWeek(target, currentWeek)
+    const gap            = parseFloat((actual - targetDue).toFixed(2))
+    const achievementPct = target > 0 ? Math.round((actual / target) * 100) : 0
+    const performanceStatus = getStatus(target, actual, targetDue) as PerformanceStatus
+    const lastOrderDate  = pi?.lastOrderDate || null
+
+    return {
+      id,
+      buyerName:         b.buyerName,
+      country:           b.country,
+      tier:              b.tier as MeetingSchedule["tier"],
+      responsiblePerson: b.responsiblePerson,
+      responsibleEmail:  b.responsibleEmail,
+      salesCoordinator:  b.salesCoordinator,
+      coordinatorEmail:  b.coordinatorEmail,
+      target,
+      actual,
+      targetDue,
+      gap,
+      achievementPct,
+      performanceStatus,
+      lastOrderDate,
+      lastMeetingDate:   sched.lastMeetingDate || null,
+      nextDueDate:       sched.nextDueDate,
+      meetingRemarks:    sched.meetingRemarks,
+      displayStatus:     getMeetingDisplayStatus(nextDueDateObj),
+      daysRemaining:     daysUntil(nextDueDateObj),
+      history: hist.map((h): MeetingHistoryEntry => ({
+        id:          h.id,
+        meetingDate: h.meetingDate,
+        completedBy: h.completedBy,
+        outcome:     (h.outcome || "OTHER") as MeetingHistoryEntry["outcome"],
+        notes:       h.notes,
+        createdAt:   h.createdAt,
+      })),
+      createdAt: sched.updatedAt,
+      updatedAt: sched.updatedAt,
+    }
+  })
+  }, SHORT_TTL)
+}
+
+/**
+ * Returns OTHERS-tier buyers (not in 80/20 monitoring) joined with current-FY
+ * performance from PI_BACKEND_MASTER.
+ */
+export async function getOthersBuyers(): Promise<OthersBuyerSummary[]> {
+  return withMemo("others_buyers", async () => {
+  const [buyers, allPI] = await Promise.all([get8020Buyers(), getPIRecords()])
+  const others = buyers.filter((b) => b.tier === "OTHERS")
+  if (!others.length) return []
+
+  const currentFY   = getCurrentFY()
+  const currentFYPI = filterPIByFY(allPI, currentFY)
+  const normName = (s: string) => s.toLowerCase().trim()
+
+  const piByBuyer = new Map<string, { containers: number; lastOrderDate: string }>()
+  for (const r of currentFYPI) {
+    const key = normName(r.buyerCompanyName)
+    if (!piByBuyer.has(key)) piByBuyer.set(key, { containers: 0, lastOrderDate: "" })
+    const e = piByBuyer.get(key)!
+    e.containers += r.totalContainers
+    if (r.piDate > e.lastOrderDate) e.lastOrderDate = r.piDate
+  }
+
+  return others.map((b): OthersBuyerSummary => {
+    const pi     = piByBuyer.get(normName(b.buyerName))
+    const target = b.annualTarget
+    const actual = pi?.containers ?? 0
+    return {
+      buyerName:         b.buyerName,
+      country:           b.country,
+      responsiblePerson: b.responsiblePerson,
+      salesCoordinator:  b.salesCoordinator,
+      target,
+      actual,
+      achievementPct:    target > 0 ? Math.round((actual / target) * 100) : 0,
+      lastOrderDate:     pi?.lastOrderDate || null,
+    }
+  })
+  }, SHORT_TTL)
+}
+
+/**
+ * Complete a meeting: update the schedule row + append a history entry.
+ * Returns the freshly-updated MeetingSchedule (re-read from sheet via getMeetingSchedules).
+ */
+export async function completeMeeting(params: {
+  meetingId:   string
+  meetingDate: string   // YYYY-MM-DD
+  outcome?:    string   // MeetingOutcome enum
+  notes:       string
+  completedBy: string
+}): Promise<MeetingSchedule | null> {
+  const { calcNextDueDate } = await import("./8020-utils")
+
+  const all = await getMeetingSchedules()
+  const target = all.find((m) => m.id === params.meetingId)
+  if (!target) return null
+
+  const meetingDateObj = new Date(params.meetingDate)
+  const nextDue = calcNextDueDate(meetingDateObj, target.tier)
+    .toISOString().split("T")[0]
+
+  const updated = await updateMeetingScheduleRow(params.meetingId, {
+    lastMeetingDate: params.meetingDate,
+    nextDueDate:     nextDue,
+    meetingRemarks:  params.notes || target.meetingRemarks,
+    updatedAt:       new Date().toISOString(),
+  })
+  if (!updated) {
+    // Row didn't exist yet (e.g. user clicked Done before the auto-bootstrap row was
+    // persisted). Append a fresh row instead so the meeting is actually recorded.
+    await appendMeetingSchedules([{
+      id:              params.meetingId,
+      buyerName:       target.buyerName,
+      country:         target.country,
+      lastMeetingDate: params.meetingDate,
+      nextDueDate:     nextDue,
+      meetingRemarks:  params.notes || target.meetingRemarks,
+      updatedAt:       new Date().toISOString(),
+    }])
+  }
+  await addMeetingHistoryEntry({
+    meetingId:   params.meetingId,
+    buyerName:   target.buyerName,
+    country:     target.country,
+    meetingDate: params.meetingDate,
+    completedBy: params.completedBy,
+    outcome:     params.outcome,
+    notes:       params.notes,
+  })
+
+  // Bust the memo so the NEXT call (e.g. dashboard refresh) reads fresh data.
+  invalidateMemo("meeting_schedules", "others_buyers")
+
+  // ── Fast path: build the updated MeetingSchedule locally instead of doing a
+  // second 4-sheet round-trip. The dashboard will refetch on its own after this
+  // response returns — no need to re-read here.
+  const { getMeetingDisplayStatus } = await import("./8020-utils")
+  const { daysUntil } = await import("./8020-utils")
+  const nextDueDateObj = new Date(nextDue)
+  const newHistoryEntry: MeetingHistoryEntry = {
+    id:          `h_pending_${Date.now()}`,   // real id will appear on next refresh
+    meetingDate: params.meetingDate,
+    completedBy: params.completedBy,
+    outcome:     (params.outcome ?? "OTHER") as MeetingHistoryEntry["outcome"],
+    notes:       params.notes,
+    createdAt:   new Date().toISOString(),
+  }
+  const updatedMeeting: MeetingSchedule = {
+    ...target,
+    lastMeetingDate: params.meetingDate,
+    nextDueDate:     nextDue,
+    meetingRemarks:  params.notes || target.meetingRemarks,
+    displayStatus:   getMeetingDisplayStatus(nextDueDateObj),
+    daysRemaining:   daysUntil(nextDueDateObj),
+    history:         [newHistoryEntry, ...target.history],
+    updatedAt:       new Date().toISOString(),
+  }
+  return updatedMeeting
+}
+
+/**
+ * Undo the most recent "done" action for a meeting:
+ *   1. Delete the latest history entry for this meetingId
+ *   2. Recompute lastMeetingDate from the now-latest history (or "" if none)
+ *   3. Recompute nextDueDate using calcNextDueDate / buildInitialSchedule
+ *
+ * Used when a sales coordinator marks a meeting done by mistake.
+ *
+ * Returns the refreshed MeetingSchedule. If there was no history to undo,
+ * returns the meeting unchanged with `undone: false`.
+ */
+export async function undoLastMeeting(params: {
+  meetingId: string
+  undoneBy:  string   // for audit log only (not stored separately yet)
+}): Promise<{ meeting: MeetingSchedule | null; undone: boolean; removedHistoryId?: string }> {
+  const { calcNextDueDate, buildInitialSchedule } = await import("./8020-utils")
+
+  const all    = await getMeetingSchedules()
+  const target = all.find((m) => m.id === params.meetingId)
+  if (!target) return { meeting: null, undone: false }
+
+  if (!target.history.length) {
+    return { meeting: target, undone: false }
+  }
+
+  // history is sorted most-recent-first by getMeetingSchedules
+  const latest = target.history[0]
+  const removed = await deleteMeetingHistoryById(latest.id)
+  if (!removed) {
+    return { meeting: target, undone: false }
+  }
+
+  // Recompute the schedule row
+  const remaining = target.history.slice(1)  // everything except the one we removed
+  let newLastMeetingDate: string
+  let newNextDueDate: string
+
+  if (remaining.length > 0) {
+    // Use the prior latest entry
+    newLastMeetingDate = remaining[0].meetingDate
+    newNextDueDate = calcNextDueDate(new Date(newLastMeetingDate), target.tier)
+      .toISOString().split("T")[0]
+  } else {
+    // No prior history → revert to bootstrap (staggered initial due date)
+    const bootstrap = buildInitialSchedule(target.tier, target.buyerName)
+    newLastMeetingDate = bootstrap.lastMeetingDate ?? ""
+    newNextDueDate = bootstrap.nextDueDate
+  }
+
+  await updateMeetingScheduleRow(params.meetingId, {
+    lastMeetingDate: newLastMeetingDate,
+    nextDueDate:     newNextDueDate,
+    meetingRemarks:  `Undone by ${params.undoneBy} on ${new Date().toISOString().split("T")[0]}`,
+    updatedAt:       new Date().toISOString(),
+  })
+
+  // Bust the memo so the NEXT call (e.g. dashboard refresh) reads fresh data.
+  invalidateMemo("meeting_schedules", "others_buyers")
+
+  // Fast path: build the updated MeetingSchedule locally
+  const { getMeetingDisplayStatus, daysUntil } = await import("./8020-utils")
+  const nextDueDateObj = new Date(newNextDueDate)
+  const updatedMeeting: MeetingSchedule = {
+    ...target,
+    lastMeetingDate: newLastMeetingDate || null,
+    nextDueDate:     newNextDueDate,
+    displayStatus:   getMeetingDisplayStatus(nextDueDateObj),
+    daysRemaining:   daysUntil(nextDueDateObj),
+    history:         remaining,
+    updatedAt:       new Date().toISOString(),
+  }
+  return {
+    meeting:          updatedMeeting,
+    undone:           true,
+    removedHistoryId: removed.id,
+  }
 }

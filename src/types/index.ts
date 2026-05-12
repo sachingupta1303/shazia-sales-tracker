@@ -572,6 +572,107 @@ export interface BuyerWorkspace {
   weeklyBars:    BuyerWeeklyBar[]   // last 12 FY weeks
 }
 
+// ─── 80/20 Key Account System ─────────────────────────────────────────────────
+
+export type Tier8020 = "TIER1" | "TIER2" | "TIER3"
+export type Tier8020All = Tier8020 | "OTHERS"
+
+/** Interval (days) per tier before next meeting is due */
+export const TIER_MEETING_INTERVAL: Record<Tier8020, number> = {
+  TIER1: 15,
+  TIER2: 20,
+  TIER3: 30,
+}
+
+export type MeetingDisplayStatus = "UPCOMING" | "DUE_SOON" | "OVERDUE"
+
+/** Raw row from the "80/20 buyers" Google Sheet */
+export interface Buyer8020 {
+  buyerName: string
+  country: string
+  tier: Tier8020All
+  responsiblePerson: string
+  responsibleEmail: string
+  salesCoordinator: string
+  coordinatorEmail: string
+  targetContainers: number
+  annualTarget: number
+  notes?: string
+}
+
+/** Meeting schedule record (from API) — joined with real performance from PI_BACKEND_MASTER */
+export interface MeetingSchedule {
+  // ── Identity ────────────────────────────────────────────────
+  id: string
+  buyerName: string
+  country: string
+  tier: Tier8020
+  // ── Ownership (from "80/20 Buyers" sheet) ──────────────────
+  responsiblePerson: string
+  responsibleEmail: string
+  salesCoordinator: string
+  coordinatorEmail: string
+  // ── Performance (target from sheet, actual from PI_BACKEND_MASTER) ──
+  target: number              // Current Year Target Containers from sheet
+  actual: number              // sum of current-FY containers from PI
+  targetDue: number           // (target / 52) × currentWeek
+  gap: number                 // actual - targetDue
+  achievementPct: number      // round((actual / target) × 100)
+  performanceStatus: PerformanceStatus
+  lastOrderDate: string | null
+  // ── Meeting state (mutable, from MEETING_SCHEDULE_8020 tab) ──
+  lastMeetingDate: string | null
+  nextDueDate: string
+  meetingRemarks: string
+  displayStatus: MeetingDisplayStatus  // OVERDUE | DUE_SOON | UPCOMING — for meeting urgency
+  daysRemaining: number
+  history: MeetingHistoryEntry[]
+  // ── Audit ───────────────────────────────────────────────────
+  createdAt: string
+  updatedAt: string
+}
+
+export type MeetingOutcome =
+  | "ORDER_CONFIRMED"
+  | "NEGOTIATING"
+  | "AWAITING_PI"
+  | "FOLLOW_UP"
+  | "NO_INTEREST"
+  | "OTHER"
+
+export interface MeetingHistoryEntry {
+  id: string
+  meetingDate: string
+  completedBy: string
+  outcome: MeetingOutcome
+  notes: string
+  createdAt: string
+}
+
+/** A non-monitored OTHERS buyer joined with PI performance */
+export interface OthersBuyerSummary {
+  buyerName: string
+  country: string
+  responsiblePerson: string
+  salesCoordinator: string
+  target: number
+  actual: number
+  achievementPct: number
+  lastOrderDate: string | null
+}
+
+/** Dashboard stats for the 80/20 section */
+export interface Stats8020 {
+  tier1Count: number
+  tier2Count: number
+  tier3Count: number
+  totalMonitored: number
+  overdue: number
+  dueSoon: number       // within 5 days
+  upcoming: number
+  completedThisMonth: number
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface AppUser {
