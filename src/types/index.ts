@@ -597,6 +597,7 @@ export interface Buyer8020 {
   coordinatorEmail: string
   targetContainers: number
   annualTarget: number
+  financialYear?: string   // Financial Year column from 80/20 Buyers sheet
   notes?: string
 }
 
