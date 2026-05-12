@@ -73,12 +73,6 @@ const NAV_ITEMS = [
     icon: "⚙️",
     roles: ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"],
   },
-  {
-    label: "Diagnostics",
-    href: "/diagnostics",
-    icon: "🩺",
-    roles: ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"],
-  },
 ]
 
 interface SidebarProps {

@@ -61,8 +61,8 @@ function getSheetsClient() {
 // ─── Cache Logic ──────────────────────────────────────────────────────────────
 // Two TTLs: 5 min for actual data, 10 sec for empty results (so a transient
 // Sheets API blip doesn't lock the entire app into "0 rows" for 5 minutes).
-const CACHE_TTL_MS          = 5 * 60 * 1000 // 5 minutes
-const CACHE_NEGATIVE_TTL_MS = 10 * 1000     // 10 seconds for empty / error results
+const CACHE_TTL_MS          = 30 * 60 * 1000 // 30 minutes (sheets rarely change mid-day)
+const CACHE_NEGATIVE_TTL_MS = 10 * 1000      // 10 seconds for empty / error results
 const cache = new Map<string, { data: string[][]; timestamp: number; ttl: number }>()
 
 function getCachedData(key: string): string[][] | null {

@@ -130,7 +130,8 @@ const FY_MONTHS = [
   "October","November","December","January","February","March",
 ]
 
-// Computed once at module load — covers the last 3 FYs + current
+// Computed once at module load — covers current FY + last 2 years
+// Default = previous FY because the current FY just started (April) and has no data yet
 function buildFYOptions(): string[] {
   const today = new Date()
   const currentYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1
@@ -140,7 +141,8 @@ function buildFYOptions(): string[] {
   })
 }
 const FY_OPTIONS = buildFYOptions()
-const DEFAULT_FY = FY_OPTIONS[0]
+// Default to previous FY (index 1) — current FY just started in April and has no data yet
+const DEFAULT_FY = FY_OPTIONS[1]
 
 // ── Filter Bar ──────────────────────────────────────────────────────────────
 

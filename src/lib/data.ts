@@ -81,9 +81,10 @@ export const MEETING_TARGET_BY_SEGMENT: Record<BuyerSegment, number> = {
 // Google Sheets API blip on cold-start would lock the entire app into "0 data"
 // for 5 minutes.
 const cache = new Map<string, { data: any; timestamp: number; ttl: number }>()
-const DEFAULT_TTL  = 5 * 60 * 1000  // 5 minutes (reference data, non-empty)
-const SHORT_TTL    = 30 * 1000      // 30 seconds (mutable 80/20 state)
-const NEGATIVE_TTL = 10 * 1000      // 10 seconds (empty / suspicious results)
+const DEFAULT_TTL  = 30 * 60 * 1000 // 30 minutes (reference data — sheets rarely change mid-day)
+const LONG_TTL     = 60 * 60 * 1000 // 1 hour     (very static: buyer master, canonical, alias map)
+const SHORT_TTL    = 30 * 1000      // 30 seconds  (mutable 80/20 meeting state)
+const NEGATIVE_TTL = 10 * 1000      // 10 seconds  (empty / suspicious results)
 
 // In-flight promises de-dup concurrent identical requests so we never hammer
 // Sheets twice for the same key when two requests land in the same tick.
@@ -270,7 +271,7 @@ export async function getBuyerMaster(): Promise<BuyerRecord[]> {
       console.error("Buyer Master fetch error:", e)
       return []
     }
-  })
+  }, LONG_TTL)
 }
 
 // ─── Canonical Buyer Master ──────────────────────────────────────────────────
@@ -304,7 +305,7 @@ export async function getCanonicalBuyers(): Promise<CanonicalBuyer[]> {
       console.warn("Canonical Buyer Master fetch warning:", e)
       return []
     }
-  })
+  }, LONG_TTL)
 }
 
 // ─── Buyer Alias Map ─────────────────────────────────────────────────────────
@@ -331,7 +332,7 @@ export async function getBuyerAliasMap(): Promise<Map<string, string>> {
       console.warn("Buyer Alias Map fetch warning:", e)
       return new Map()
     }
-  })
+  }, LONG_TTL)
 }
 
 // ─── Country Strategies ───────────────────────────────────────────────────────
