@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/8020/cron-batch",
-      "schedule": "0 4,6,8,10,12 * * *"
+      "schedule": "30 4 * * *"
     }
   ]
 }

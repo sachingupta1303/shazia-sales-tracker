@@ -1,0 +1,82 @@
+# 80/20 Meeting Reminder — Batched Email Sender
+#
+# Fires 5× per day during IST office hours (9:30 AM – 5:30 PM IST)
+# Each run sends ONE batch of 3 most-urgent buyers (OVERDUE first, then DUE_SOON)
+# 2-hour gap is enforced in code — safe to run even if GitHub fires twice.
+#
+# Schedule (UTC → IST):
+#   04:00 UTC = 09:30 IST   ← first batch of the day
+#   06:00 UTC = 11:30 IST
+#   08:00 UTC = 13:30 IST
+#   10:00 UTC = 15:30 IST
+#   12:00 UTC = 17:30 IST   ← last batch
+#
+# Required GitHub Secrets (Settings → Secrets → Actions):
+#   APP_URL        → https://your-vercel-domain.vercel.app  (no trailing slash)
+#   CRON_SECRET    → same value as CRON_SECRET in Vercel env vars
+
+name: 80/20 Email Reminders
+
+on:
+  schedule:
+    - cron: "0 4,6,8,10,12 * * *"   # Mon–Sun, 5 times/day
+
+  # Allow manual trigger from GitHub Actions tab (useful for testing)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force send (bypass office hours + 2h gap)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  send-batch:
+    name: Send reminder batch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Call cron-batch endpoint
+        env:
+          APP_URL:     ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          FORCE="${{ github.event.inputs.force || 'false' }}"
+          URL="${APP_URL}/api/8020/cron-batch"
+          if [ "$FORCE" = "true" ]; then
+            URL="${URL}?force=1"
+          fi
+
+          echo "→ Calling: $URL"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 60 \
+            "$URL")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          # Parse key fields for a readable summary
+          SKIPPED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('skipped', False))" 2>/dev/null || echo "unknown")
+          SENT=$(echo "$BODY"    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sent', 0))"    2>/dev/null || echo "?")
+          FAILED=$(echo "$BODY"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('failed', 0))"  2>/dev/null || echo "?")
+          REASON=$(echo "$BODY"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('skipReason',''))" 2>/dev/null || echo "")
+
+          if [ "$SKIPPED" = "True" ]; then
+            echo "⏭ Batch skipped: $REASON"
+          else
+            echo "✅ Batch sent: ${SENT} emails sent, ${FAILED} failed"
+          fi
+
+          # Fail the job if HTTP error (not a skip)
+          if [ "$HTTP_CODE" -ge 500 ]; then
+            echo "❌ Server error $HTTP_CODE"
+            exit 1
+          fi
