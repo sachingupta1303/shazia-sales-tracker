@@ -33,7 +33,7 @@ interface Props {
   allSalesPersons: string[]
 }
 
-type Tab = "overview" | "activity" | "tasks" | "alerts" | "history" | "ownership"
+type Tab = "overview" | "activity" | "tasks" | "alerts" | "history" | "ownership" | "meetings"
 
 // ── 1-Tap Activity Buttons config ─────────────────────────────────────────────
 const QUICK_ACTIVITIES: { type: ActivityType; label: string; icon: string; color: string }[] = [
@@ -1237,7 +1237,7 @@ export function WorkspaceClient({ code, userRole, userName, salesPerson, allSale
   const initialTab = ((): Tab => {
     if (typeof window === "undefined") return "overview"
     const t = new URLSearchParams(window.location.search).get("tab")
-    if (t === "tasks" || t === "activity" || t === "alerts" || t === "history" || t === "ownership" || t === "overview") return t as Tab
+    if (t === "tasks" || t === "activity" || t === "alerts" || t === "history" || t === "ownership" || t === "overview" || t === "meetings") return t as Tab
     return "overview"
   })()
 
@@ -1296,6 +1296,7 @@ export function WorkspaceClient({ code, userRole, userName, salesPerson, allSale
     { key: "alerts",    label: "Alerts" },
     { key: "history",   label: "PIs",        count: piHistory.length },
     { key: "ownership", label: "Ownership" },
+    { key: "meetings",  label: "Meetings 🤝" },
   ]
 
   return (
@@ -1522,6 +1523,9 @@ export function WorkspaceClient({ code, userRole, userName, salesPerson, allSale
         <OwnershipTab buyer={buyer} isManager={isManager} salesPersons={allSalesPersons} />
       )}
 
+      {/* ── Meetings tab ── */}
+      {tab === "meetings" && <BuyerMeetingsTab buyerName={buyer.canonicalBuyerName} buyerCountry={buyer.country} />}
+
       {/* ── Segment edit modal (manager+ only) ── */}
       {showSegmentEdit && (
         <SegmentEditModal
@@ -1530,6 +1534,174 @@ export function WorkspaceClient({ code, userRole, userName, salesPerson, allSale
           onSaved={() => { fetchWorkspace(); setToast("Segment updated") }}
         />
       )}
+    </div>
+  )
+}
+
+// ── Buyer Meetings Tab ────────────────────────────────────────────────────────
+
+interface MeetingHistEntry {
+  id: string
+  meetingDate: string
+  completedBy: string
+  outcome: string
+  notes: string
+  createdAt: string
+}
+
+interface BuyerMeetingRecord {
+  id: string
+  buyerName: string
+  country: string
+  tier: string
+  nextDueDate: string
+  lastMeetingDate: string | null
+  daysRemaining: number
+  displayStatus: string
+  target: number
+  actual: number
+  achievementPct: number
+  responsiblePerson: string
+  salesCoordinator: string
+  history: MeetingHistEntry[]
+}
+
+const OUTCOME_LABEL: Record<string, string> = {
+  ORDER_CONFIRMED: "Order Confirmed",
+  NEGOTIATING:     "Negotiating",
+  AWAITING_PI:     "Awaiting PI",
+  FOLLOW_UP:       "Follow-up",
+  NO_INTEREST:     "No Interest",
+  OTHER:           "Other",
+}
+const OUTCOME_COLOR: Record<string, string> = {
+  ORDER_CONFIRMED: "bg-green-100 text-green-800",
+  NEGOTIATING:     "bg-blue-100 text-blue-800",
+  AWAITING_PI:     "bg-purple-100 text-purple-700",
+  FOLLOW_UP:       "bg-amber-100 text-amber-800",
+  NO_INTEREST:     "bg-red-100 text-red-700",
+  OTHER:           "bg-gray-100 text-gray-600",
+}
+
+function BuyerMeetingsTab({ buyerName, buyerCountry }: { buyerName: string; buyerCountry: string }) {
+  const [meeting, setMeeting] = useState<BuyerMeetingRecord | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/8020/meetings")
+      .then((r) => r.json())
+      .then((data) => {
+        const norm = (s: string) => s.toLowerCase().trim()
+        const found = (data.meetings as BuyerMeetingRecord[]).find(
+          (m) => norm(m.buyerName) === norm(buyerName)
+        )
+        setMeeting(found ?? null)
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [buyerName])
+
+  if (loading) return <div className="p-6 text-sm text-gray-400">Loading meeting data…</div>
+  if (error)   return <div className="p-6 text-sm text-red-500">{error}</div>
+  if (!meeting) return (
+    <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 text-sm text-gray-500">
+      No 80/20 meeting schedule found for this buyer. Only Tier 1, 2, 3 buyers are tracked.
+    </div>
+  )
+
+  const statusColor =
+    meeting.displayStatus === "OVERDUE"  ? "bg-red-100 text-red-700 border-red-200" :
+    meeting.displayStatus === "DUE_SOON" ? "bg-amber-100 text-amber-700 border-amber-200" :
+    "bg-green-100 text-green-700 border-green-200"
+
+  return (
+    <div className="space-y-4">
+      {/* Schedule card */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Meeting Schedule</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs font-bold px-2 py-1 rounded-full border ${statusColor}`}>
+                {meeting.displayStatus === "OVERDUE"
+                  ? `⚠ OVERDUE by ${Math.abs(meeting.daysRemaining)} days`
+                  : meeting.displayStatus === "DUE_SOON"
+                  ? `⏰ Due in ${meeting.daysRemaining} days`
+                  : `✓ On track — due in ${meeting.daysRemaining} days`}
+              </span>
+              <span className="text-xs text-gray-400">Tier {meeting.tier.replace("TIER","")}</span>
+            </div>
+          </div>
+          <a
+            href={`/8020/done/${encodeURIComponent(meeting.id)}`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors"
+          >
+            ✓ Mark Meeting Done
+          </a>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide">Next Due</p>
+            <p className="text-sm font-bold text-gray-800 mt-0.5">
+              {new Date(meeting.nextDueDate).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })}
+            </p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide">Last Meeting</p>
+            <p className="text-sm font-bold text-gray-800 mt-0.5">
+              {meeting.lastMeetingDate
+                ? new Date(meeting.lastMeetingDate).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })
+                : "None recorded"}
+            </p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide">Target</p>
+            <p className="text-sm font-bold text-gray-800 mt-0.5">{meeting.target} containers</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide">Achievement</p>
+            <p className={`text-sm font-bold mt-0.5 ${meeting.achievementPct >= 80 ? "text-green-700" : meeting.achievementPct >= 50 ? "text-amber-600" : "text-red-600"}`}>
+              {meeting.actual} / {meeting.target} ({meeting.achievementPct}%)
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* History */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-700">Meeting History ({meeting.history.length})</p>
+        </div>
+        {meeting.history.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-gray-400 text-center">No meetings recorded yet.</p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {meeting.history.map((h) => (
+              <div key={h.id} className="px-4 py-3 flex items-start gap-3">
+                <div className="flex-shrink-0 w-16 text-center">
+                  <p className="text-xs font-semibold text-gray-700">
+                    {new Date(h.meetingDate).toLocaleDateString("en-IN", { day:"numeric", month:"short" })}
+                  </p>
+                  <p className="text-[10px] text-gray-400">
+                    {new Date(h.meetingDate).getFullYear()}
+                  </p>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${OUTCOME_COLOR[h.outcome] ?? "bg-gray-100 text-gray-600"}`}>
+                      {OUTCOME_LABEL[h.outcome] ?? h.outcome}
+                    </span>
+                    <span className="text-[10px] text-gray-400">by {h.completedBy}</span>
+                  </div>
+                  {h.notes && <p className="text-xs text-gray-600 mt-1">{h.notes}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

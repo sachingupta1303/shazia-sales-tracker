@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend,
@@ -172,12 +173,6 @@ function FilterBar({
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filters</span>
-
-      {/* Financial year */}
-      <select value={filters.fy} onChange={(e) => set("fy", e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 font-semibold bg-blue-50 text-blue-900 border-blue-200">
-        {FY_OPTIONS.map((f) => <option key={f} value={f}>FY {f}</option>)}
-      </select>
 
       {/* Period (mutually exclusive) */}
       <select value={filters.fyMonth} onChange={(e) => set("fyMonth", e.target.value)}
@@ -426,7 +421,9 @@ function BuyerTab({ filters }: { filters: Filters }) {
                   <td className="px-3 py-2.5 text-gray-800">
                     <div className="flex items-center gap-1.5">
                       <SegmentTag segment={r.segment} isKeyAccount={r.isKeyAccount} />
-                      <span className="truncate max-w-[180px] font-bold group-hover:text-green-700">{r.buyerName}</span>
+                      <Link href={`/buyers/${encodeURIComponent(r.buyerCode || r.buyerName)}`} onClick={(e) => e.stopPropagation()} className="truncate max-w-[180px] font-medium text-gray-900 hover:text-green-700 hover:underline">
+                        {r.buyerName}
+                      </Link>
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-xs text-gray-500 font-medium">{r.country}</td>
@@ -588,7 +585,9 @@ function CountryTab({ filters }: { filters: Filters }) {
                   <td className="px-3 py-2.5 font-semibold text-gray-800">
                     <div className="flex items-center gap-1.5">
                       {r.isDreamMarket && <span className="text-amber-500" title="Dream Market">🌟</span>}
-                      {r.country}
+                      <Link href={`/countries/${encodeURIComponent(r.country)}`} onClick={(e) => e.stopPropagation()} className="font-medium text-gray-900 hover:text-green-700 hover:underline">
+                        {r.country}
+                      </Link>
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-center tabular-nums font-medium">{formatNumber(r.target, 0)}</td>
