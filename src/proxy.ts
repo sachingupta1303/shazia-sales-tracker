@@ -2,7 +2,13 @@ import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-const PUBLIC_PATHS = ["/login", "/api/auth"]
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth",
+  "/meeting-done",              // magic-link meeting completion — no login required
+  "/api/8020/meetings/complete-token",  // token-based API — no login required
+  "/api/debug",                 // SMTP debug endpoint
+]
 
 export const proxy = auth(function proxy(req) {
   const { nextUrl, auth: session } = req as NextRequest & { auth: typeof req.auth }
