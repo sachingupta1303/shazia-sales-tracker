@@ -1,28 +1,36 @@
-import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-// Public paths — no login required
-const PUBLIC_PATHS = [
+// Public paths — no auth required
+const PUBLIC_PREFIXES = [
   "/login",
   "/api/auth",
-  "/meeting-done",                      // magic-link meeting completion (no login)
-  "/api/8020/meetings/complete-token",  // token-based API (no login)
-  "/api/debug",                         // SMTP debug endpoint
+  "/meeting-done",                       // magic-link meeting completion (coordinators, no login)
+  "/api/8020/meetings/complete-token",   // token-based API (no login)
+  "/api/debug",                          // SMTP debug
 ]
 
-export const middleware = auth(function middleware(req) {
-  const { nextUrl } = req as NextRequest
-  const session = req.auth
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl
 
-  const isPublic = PUBLIC_PATHS.some((p) => nextUrl.pathname.startsWith(p))
+  // Allow public routes through immediately
+  if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next()
+  }
 
-  if (!session && !isPublic) {
+  // Check for NextAuth session cookie (any of the known names)
+  const hasSession =
+    req.cookies.has("next-auth.session-token") ||
+    req.cookies.has("__Secure-next-auth.session-token") ||
+    req.cookies.has("authjs.session-token") ||
+    req.cookies.has("__Secure-authjs.session-token")
+
+  if (!hasSession) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
   return NextResponse.next()
-})
+}
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
