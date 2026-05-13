@@ -121,16 +121,26 @@ export function EmailRemindersClient() {
       {/* SMTP Test */}
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <h2 className="text-sm font-bold text-gray-700 mb-1">🔌 SMTP Connection Test</h2>
-        <p className="text-xs text-gray-500 mb-4">
+        <p className="text-xs text-gray-500 mb-3">
           Sends a real test email to your account. Confirms Gmail App Password + credentials are working.
         </p>
-        <button
-          onClick={testSmtp}
-          disabled={smtpLoading}
-          className="px-4 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-        >
-          {smtpLoading ? "Connecting…" : "Send SMTP Test Email →"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <button
+            onClick={testSmtp}
+            disabled={smtpLoading}
+            className="px-4 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          >
+            {smtpLoading ? "Connecting…" : "Send SMTP Test Email →"}
+          </button>
+          <a
+            href="/api/debug/smtp-check"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-indigo-50 text-indigo-700 text-sm font-semibold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors"
+          >
+            🔍 Check Env Vars
+          </a>
+        </div>
 
         {smtpResult && (
           <div className={`mt-4 rounded-lg p-4 border text-sm ${
