@@ -1,217 +1,201 @@
 /**
- * 80/20 Key Account meeting reminder emails.
- * Sends via the shared nodemailer SMTP transport (see src/lib/mailer.ts).
+ * 80/20 Key Account — Consolidated meeting reminder emails.
  *
- * Template includes:
- *  - Buyer + tier + country
- *  - Urgency banner (red overdue / amber due-soon)
- *  - Performance card (target / actual / achievement %)
- *  - Owner / coordinator details
- *  - "Action required" checklist
- *  - "Mark Done" CTA → /8020 page
+ * One email per person per day:
+ *   • Responsible Person  → list of ALL their buyers due/overdue (no done button)
+ *   • Sales Coordinator   → list of ALL meetings they coordinate + "✓ Done" button per row
  */
 import { sendMail, APP_BASE_URL, esc } from "./mailer"
 import { TIER_LABEL } from "./8020-utils"
-import { createDoneToken } from "./data"
 
-export interface MeetingReminderPayload {
-  meetingId?:        string   // optional only for legacy callers; required for working CTA
+export interface ConsolidatedMeetingRow {
+  meetingId:         string
   buyerName:         string
   country:           string
   tier:              string
-  nextDueDate:       Date
+  responsiblePerson: string   // shown in coordinator emails
+  nextDueDate:       string   // ISO date string YYYY-MM-DD
   daysRemaining:     number
-  responsiblePerson: string
-  responsibleEmail:  string
-  salesCoordinator:  string
-  coordinatorEmail:  string
-  // Performance (optional — included when available)
-  target?:           number
-  actual?:           number
-  achievementPct?:   number
-  lastMeetingDate?:  string | null
+  displayStatus:     "OVERDUE" | "DUE_SOON"
+  doneUrl?:          string   // pre-generated magic link (coordinator only)
 }
 
-const TIER_INTERVAL_LABEL: Record<string, string> = {
-  TIER1: "every 15 days",
-  TIER2: "every 20 days",
-  TIER3: "every 30 days",
-}
+export async function sendConsolidatedEmail(params: {
+  personName:  string
+  personEmail: string
+  role:        "responsible" | "coordinator"
+  meetings:    ConsolidatedMeetingRow[]
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { personName, personEmail, role, meetings } = params
+  if (!personEmail) return { ok: false, reason: "no_email" }
+  if (!meetings.length) return { ok: false, reason: "no_meetings" }
 
-export async function sendMeetingReminderEmail(
-  p: MeetingReminderPayload
-): Promise<{ ok: boolean; reason?: string; previewUrl?: string }> {
-  // Both responsible + coordinator receive the alert
-  const to: string[] = []
-  if (p.responsibleEmail) to.push(p.responsibleEmail)
-  if (p.coordinatorEmail && p.coordinatorEmail !== p.responsibleEmail) {
-    to.push(p.coordinatorEmail)
+  const isCoord = role === "coordinator"
+  const count   = meetings.length
+
+  const overdues = meetings
+    .filter(m => m.displayStatus === "OVERDUE")
+    .sort((a, b) => a.daysRemaining - b.daysRemaining)   // most negative first
+  const dueSoons = meetings
+    .filter(m => m.displayStatus === "DUE_SOON")
+    .sort((a, b) => a.daysRemaining - b.daysRemaining)   // soonest first
+
+  const subject = isCoord
+    ? `📋 ${count} Meeting${count > 1 ? "s" : ""} to Schedule — Action Needed (${personName})`
+    : `📋 ${count} Meeting Reminder${count > 1 ? "s" : ""} — ${personName}`
+
+  // ── Row builder ──────────────────────────────────────────────────────────────
+  function buildRow(m: ConsolidatedMeetingRow): string {
+    const isOver      = m.displayStatus === "OVERDUE"
+    const statusColor = isOver ? "#dc2626" : "#d97706"
+    const statusBg    = isOver ? "#fee2e2" : "#fef3c7"
+    const absDays     = Math.abs(m.daysRemaining)
+    const statusText  = isOver
+      ? `Overdue ${absDays} day${absDays === 1 ? "" : "s"}`
+      : `Due in ${m.daysRemaining} day${m.daysRemaining === 1 ? "" : "s"}`
+
+    const tierLabel  = TIER_LABEL[m.tier] ?? m.tier
+    const tierColor  = m.tier === "TIER1" ? "#7c3aed" : m.tier === "TIER2" ? "#1d4ed8" : "#374151"
+    const tierBg     = m.tier === "TIER1" ? "#f3e8ff" : m.tier === "TIER2" ? "#dbeafe" : "#f3f4f6"
+
+    const dueDateStr = (() => {
+      try {
+        return new Date(m.nextDueDate + "T00:00:00").toLocaleDateString("en-IN", {
+          day: "numeric", month: "short", year: "numeric",
+        })
+      } catch { return m.nextDueDate }
+    })()
+
+    const respCell = isCoord
+      ? `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
+      : ""
+
+    const doneCell = isCoord
+      ? `<td style="padding:10px 14px;text-align:center;border-bottom:1px solid #f3f4f6">
+           ${m.doneUrl
+             ? `<a href="${esc(m.doneUrl)}" target="_blank" rel="noopener"
+                  style="display:inline-block;padding:5px 14px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
+                  ✓ Done
+                </a>`
+             : `<span style="color:#9ca3af;font-size:12px">—</span>`
+           }
+         </td>`
+      : ""
+
+    return `
+      <tr>
+        <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6">${esc(m.buyerName)}</td>
+        <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.country)}</td>
+        <td style="padding:10px 14px;text-align:center;border-bottom:1px solid #f3f4f6">
+          <span style="background:${tierBg};color:${tierColor};padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700">${esc(tierLabel)}</span>
+        </td>
+        ${respCell}
+        <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${dueDateStr}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #f3f4f6">
+          <span style="background:${statusBg};color:${statusColor};padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap">${statusText}</span>
+        </td>
+        ${doneCell}
+      </tr>`
   }
-  if (!to.length) return { ok: false, reason: "no_recipients" }
 
-  // Generate a one-time magic-link token so coordinator can mark done without login
-  let doneUrl = `${APP_BASE_URL}/8020`
-  if (p.meetingId) {
-    try {
-      const token = await createDoneToken(p.meetingId, p.buyerName)
-      doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(p.meetingId)}?token=${token}`
-    } catch {
-      // Token creation failed — fall back to login-based URL
-      doneUrl = `${APP_BASE_URL}/8020/done/${encodeURIComponent(p.meetingId)}`
-    }
+  // ── Section builder ───────────────────────────────────────────────────────────
+  function buildSection(emoji: string, title: string, borderColor: string, bg: string, rows: ConsolidatedMeetingRow[]): string {
+    if (!rows.length) return ""
+
+    const respHeader = isCoord
+      ? `<th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Responsible</th>`
+      : ""
+    const doneHeader = isCoord
+      ? `<th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Action</th>`
+      : ""
+
+    return `
+    <tr><td style="padding:20px 28px 0">
+      <div style="background:${bg};border-left:4px solid ${borderColor};padding:10px 16px;border-radius:0 8px 8px 0;margin-bottom:14px">
+        <p style="margin:0;font-size:13px;font-weight:700;color:${borderColor}">${emoji} ${title}</p>
+      </div>
+      <div style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <thead>
+            <tr>
+              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Buyer</th>
+              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Country</th>
+              <th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Tier</th>
+              ${respHeader}
+              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Due Date</th>
+              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Status</th>
+              ${doneHeader}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(buildRow).join("")}
+          </tbody>
+        </table>
+      </div>
+    </td></tr>`
   }
 
-  const isOverdue      = p.daysRemaining < 0
-  const isToday        = p.daysRemaining === 0
-  const accent         = isOverdue ? "#dc2626" : isToday ? "#ea580c" : "#d97706"
-  const accentSoft     = isOverdue ? "#fef2f2" : isToday ? "#fff7ed" : "#fffbeb"
-  const accentBorder   = isOverdue ? "#fecaca" : isToday ? "#fed7aa" : "#fde68a"
-  const urgencyText    = isOverdue
-    ? `⚠️ OVERDUE by ${Math.abs(p.daysRemaining)} day${Math.abs(p.daysRemaining) === 1 ? "" : "s"}`
-    : isToday
-      ? `🔔 DUE TODAY`
-      : `⏰ Due in ${p.daysRemaining} day${p.daysRemaining === 1 ? "" : "s"}`
-  const tierLabel      = TIER_LABEL[p.tier] ?? p.tier
-  const cycleLabel     = TIER_INTERVAL_LABEL[p.tier] ?? ""
-  const dueDateStr     = p.nextDueDate.toLocaleDateString("en-IN", {
-    weekday: "short", day: "numeric", month: "short", year: "numeric",
-  })
-  const lastMeetingStr = p.lastMeetingDate
-    ? new Date(p.lastMeetingDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-    : "No prior meeting recorded"
+  // ── Full HTML ─────────────────────────────────────────────────────────────────
+  const headerBg   = isCoord ? "#1d4ed8" : "#1e293b"
+  const headerRole = isCoord ? "Coordinator Alert" : "Sales Reminder"
+  const headerMsg  = isCoord
+    ? `you have ${count} meeting${count > 1 ? "s" : ""} to schedule`
+    : `you have ${count} meeting${count > 1 ? "s" : ""} coming up`
 
-  const subject = isOverdue
-    ? `[OVERDUE] Meeting with ${p.buyerName} — ${tierLabel}`
-    : isToday
-      ? `[DUE TODAY] Meeting with ${p.buyerName} — ${tierLabel}`
-      : `Reminder: Meeting with ${p.buyerName} in ${p.daysRemaining} day${p.daysRemaining === 1 ? "" : "s"}`
-
-  // Performance section (only if data available)
-  const hasPerf = p.target !== undefined && p.target > 0
-  const achColor = !hasPerf ? "#6b7280"
-    : (p.achievementPct ?? 0) >= 100 ? "#16a34a"
-    : (p.achievementPct ?? 0) >= 70  ? "#d97706"
-    : "#dc2626"
-  const achBg = !hasPerf ? "#f3f4f6"
-    : (p.achievementPct ?? 0) >= 100 ? "#dcfce7"
-    : (p.achievementPct ?? 0) >= 70  ? "#fef3c7"
-    : "#fee2e2"
+  const noteBox = isCoord
+    ? `<tr><td style="padding:16px 28px 0">
+         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px">
+           <p style="margin:0;font-size:13px;color:#166534;line-height:1.6">
+             <strong>Your action:</strong> Click <strong>✓ Done</strong> next to each buyer once the meeting is confirmed or done.
+             No login required — just click and fill a quick form. Each link works only once.
+           </p>
+         </div>
+       </td></tr>`
+    : `<tr><td style="padding:16px 28px 0">
+         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px">
+           <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.6">
+             <strong>Note:</strong> Your Sales Coordinator will schedule these meetings.
+             This reminder is for your awareness of upcoming buyer meetings.
+           </p>
+         </div>
+       </td></tr>`
 
   const html = `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;padding:24px 16px">
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;padding:24px 12px">
 <tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08)">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+  style="max-width:680px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
 
   <!-- HEADER -->
-  <tr><td style="background:${accent};padding:24px 28px">
-    <p style="margin:0;color:rgba(255,255,255,.85);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">
-      80/20 Key Account Alert · ${esc(tierLabel)}
+  <tr><td style="background:${headerBg};padding:24px 28px">
+    <p style="margin:0;color:rgba(255,255,255,.65);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">
+      Shazia Rice · 80/20 Key Account System · ${headerRole}
     </p>
-    <h1 style="margin:8px 0 0;color:#ffffff;font-size:22px;font-weight:700;line-height:1.3">
-      Meeting reminder: ${esc(p.buyerName)}
+    <h1 style="margin:8px 0 4px;color:#ffffff;font-size:20px;font-weight:700;line-height:1.3">
+      Hi ${esc(personName)}, ${headerMsg}
     </h1>
-    <p style="margin:6px 0 0;color:rgba(255,255,255,.85);font-size:13px">${esc(p.country)}</p>
-  </td></tr>
-
-  <!-- URGENCY BANNER -->
-  <tr><td style="padding:20px 28px 0">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-      style="background:${accentSoft};border:1px solid ${accentBorder};border-radius:10px">
-      <tr><td style="padding:14px 18px">
-        <p style="margin:0;font-size:16px;font-weight:700;color:${accent}">${urgencyText}</p>
-        <p style="margin:4px 0 0;font-size:13px;color:#6b7280">
-          Scheduled due date: <strong style="color:#111827">${dueDateStr}</strong>
-        </p>
-      </td></tr>
-    </table>
-  </td></tr>
-
-  <!-- MEETING DETAILS -->
-  <tr><td style="padding:20px 28px 0">
-    <p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#6b7280;letter-spacing:.5px;text-transform:uppercase">
-      Buyer Details
-    </p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;border-collapse:collapse">
-      <tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #f3f4f6">Buyer</td>
-          <td style="padding:10px 0;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #f3f4f6">${esc(p.buyerName)}</td></tr>
-      <tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #f3f4f6">Country</td>
-          <td style="padding:10px 0;color:#111827;text-align:right;border-bottom:1px solid #f3f4f6">${esc(p.country)}</td></tr>
-      <tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #f3f4f6">Classification</td>
-          <td style="padding:10px 0;text-align:right;border-bottom:1px solid #f3f4f6">
-            <span style="background:${accent}1a;color:${accent};padding:3px 10px;border-radius:6px;font-weight:700;font-size:12px">${esc(tierLabel)}</span>
-            <span style="color:#9ca3af;font-size:12px;margin-left:6px">${esc(cycleLabel)}</span>
-          </td></tr>
-      <tr><td style="padding:10px 0;color:#6b7280;border-bottom:1px solid #f3f4f6">Last meeting</td>
-          <td style="padding:10px 0;color:#111827;text-align:right;border-bottom:1px solid #f3f4f6">${esc(lastMeetingStr)}</td></tr>
-      <tr><td style="padding:10px 0;color:#6b7280">Responsible</td>
-          <td style="padding:10px 0;color:#111827;font-weight:600;text-align:right">${esc(p.responsiblePerson)}</td></tr>
-      <tr><td style="padding:10px 0;color:#6b7280;border-top:1px solid #f3f4f6">Sales Coordinator</td>
-          <td style="padding:10px 0;color:#111827;text-align:right;border-top:1px solid #f3f4f6">${esc(p.salesCoordinator)}</td></tr>
-    </table>
-  </td></tr>
-
-  ${hasPerf ? `<!-- PERFORMANCE CARD -->
-  <tr><td style="padding:20px 28px 0">
-    <p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#6b7280;letter-spacing:.5px;text-transform:uppercase">
-      FY 2026-27 Performance
-    </p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-      <tr>
-        <td width="33%" style="text-align:center;background:#f9fafb;border-radius:10px 0 0 10px;padding:14px 8px;border-right:1px solid #e5e7eb">
-          <p style="margin:0;font-size:10px;font-weight:700;color:#6b7280;letter-spacing:.5px;text-transform:uppercase">Target</p>
-          <p style="margin:4px 0 0;font-size:22px;font-weight:700;color:#111827;font-variant-numeric:tabular-nums">${(p.target ?? 0).toLocaleString("en-IN")}</p>
-        </td>
-        <td width="33%" style="text-align:center;background:#f9fafb;padding:14px 8px;border-right:1px solid #e5e7eb">
-          <p style="margin:0;font-size:10px;font-weight:700;color:#6b7280;letter-spacing:.5px;text-transform:uppercase">Actual</p>
-          <p style="margin:4px 0 0;font-size:22px;font-weight:700;color:#111827;font-variant-numeric:tabular-nums">${(p.actual ?? 0).toLocaleString("en-IN")}</p>
-        </td>
-        <td width="33%" style="text-align:center;background:${achBg};border-radius:0 10px 10px 0;padding:14px 8px">
-          <p style="margin:0;font-size:10px;font-weight:700;color:${achColor};letter-spacing:.5px;text-transform:uppercase">Achievement</p>
-          <p style="margin:4px 0 0;font-size:22px;font-weight:700;color:${achColor};font-variant-numeric:tabular-nums">${p.achievementPct ?? 0}%</p>
-        </td>
-      </tr>
-    </table>
-    <p style="margin:8px 0 0;font-size:11px;color:#9ca3af;text-align:center">containers · target from 80/20 Buyers sheet · actual from PI Backend Master</p>
-  </td></tr>` : ""}
-
-  <!-- ACTION REQUIRED -->
-  <tr><td style="padding:24px 28px 0">
-    <p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#6b7280;letter-spacing:.5px;text-transform:uppercase">
-      Action Required
-    </p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f9fafb;border-radius:10px;border:1px solid #e5e7eb">
-      <tr><td style="padding:14px 18px">
-        <ol style="margin:0;padding-left:20px;color:#374151;font-size:14px;line-height:1.7">
-          <li>Connect with <strong>${esc(p.buyerName)}</strong> on or before <strong>${dueDateStr}</strong></li>
-          <li>Discuss requirements, pricing, samples, and next steps</li>
-          <li>Log the meeting in the 80/20 tracker by clicking the button below</li>
-        </ol>
-      </td></tr>
-    </table>
-  </td></tr>
-
-  <!-- CTA BUTTON -->
-  <tr><td style="padding:24px 28px;text-align:center">
-    <a href="${doneUrl}" target="_blank" rel="noopener"
-      style="display:inline-block;padding:14px 32px;background:#16a34a;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px;box-shadow:0 2px 8px rgba(22,163,74,.3)">
-      ✓ Mark Meeting as Done
-    </a>
-    <p style="margin:12px 0 0;font-size:11px;color:#9ca3af">
-      One click → fill the meeting outcome → done. (Made a mistake? Undo on the same screen.)
+    <p style="margin:0;color:rgba(255,255,255,.65);font-size:13px">
+      ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
     </p>
   </td></tr>
+
+  ${buildSection("🔴", "OVERDUE — Immediate Action Required", "#dc2626", "#fef2f2", overdues)}
+  ${buildSection("🟡", "DUE SOON — Within 5 Days", "#d97706", "#fffbeb", dueSoons)}
+
+  ${noteBox}
 
   <!-- FOOTER -->
-  <tr><td style="padding:18px 28px;background:#f9fafb;border-top:1px solid #f3f4f6">
-    <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.5">
-      <strong style="color:#6b7280">Shazia Rice · 80/20 Key Account System</strong><br/>
-      Auto-generated reminder · Sent on ${new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+  <tr><td style="padding:24px 28px;background:#f9fafb;border-top:1px solid #e5e7eb;margin-top:24px">
+    <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.6">
+      <strong style="color:#6b7280">Shazia Rice · 80/20 Key Account System</strong><br>
+      Auto-generated · ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} IST
     </p>
   </td></tr>
 
@@ -221,5 +205,5 @@ export async function sendMeetingReminderEmail(
 </body>
 </html>`
 
-  return sendMail({ to, subject, html })
+  return sendMail({ to: [personEmail], subject, html })
 }

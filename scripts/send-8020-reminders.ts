@@ -1,136 +1,52 @@
 /**
- * Sends 80/20 meeting reminder emails for all buyers whose next meeting is
- * DUE_SOON (within 5 days) or OVERDUE. Uses the same logic as the daily cron.
+ * Sends 80/20 consolidated meeting reminder emails.
+ * One email per Responsible Person + one per Sales Coordinator.
  *
- * Recipients: Responsible Person email + Sales Coordinator email (per buyer)
- * Dedupe:     ALERT_LOG_8020 (same email + date = skipped)
+ * Uses the same runReminderBatch() logic as the daily cron.
  *
  * Run: npx tsx scripts/send-8020-reminders.ts
+ * Run (force, bypass office hours): npx tsx scripts/send-8020-reminders.ts --force
  */
 import { config } from "dotenv"
 config({ path: ".env.local" })
 
 async function main() {
+  const force = process.argv.includes("--force")
+
   console.log("\n" + "═".repeat(70))
-  console.log("📧  80/20 KEY ACCOUNT — REMINDER EMAIL DISPATCH")
+  console.log("📧  80/20 KEY ACCOUNT — CONSOLIDATED REMINDER EMAIL DISPATCH")
   console.log("═".repeat(70))
+  if (force) console.log("  ⚡ Force mode: bypassing office-hours + 2h gap checks\n")
 
-  const {
-    getMeetingSchedules,
-    getAlertLogRows,
-    addAlertLogEntry,
-  } = await import("../src/lib/data")
-  const { sendMeetingReminderEmail } = await import("../src/lib/email-8020")
-  const { verifySmtp } = await import("../src/lib/mailer")
+  const { runReminderBatch } = await import("../src/lib/8020-batch")
+  const { verifySmtp }       = await import("../src/lib/mailer")
 
-  // 0. SMTP sanity check
   const v = await verifySmtp()
   if (!v.ok) {
     console.error(`\n❌ SMTP not ready: ${v.error}`)
     process.exit(1)
   }
-  console.log("\n✓ SMTP connection verified\n")
+  console.log("✓ SMTP connection verified\n")
 
-  const todayISO = new Date().toISOString().split("T")[0]
-  const meetings = await getMeetingSchedules()
+  const result = await runReminderBatch({ force })
 
-  const dueSoonOrOverdue = meetings.filter(
-    (m) => m.displayStatus === "DUE_SOON" || m.displayStatus === "OVERDUE"
-  )
-
-  console.log(`Total monitored buyers:  ${meetings.length}`)
-  console.log(`Eligible for reminder:   ${dueSoonOrOverdue.length} (OVERDUE + DUE_SOON within 5 days)`)
-  console.log(`  • OVERDUE: ${meetings.filter((m) => m.displayStatus === "OVERDUE").length}`)
-  console.log(`  • DUE_SOON: ${meetings.filter((m) => m.displayStatus === "DUE_SOON").length}\n`)
-
-  if (!dueSoonOrOverdue.length) {
-    console.log("✅ No buyers currently need reminders. (Everyone is either upcoming or already alerted today.)")
-    return
-  }
-
-  // Build dedup set: meetingId|email already sent today
-  const todaysAlerts = await getAlertLogRows(todayISO)
-  const sentToday = new Set(todaysAlerts.map((a) => `${a.meetingId}|${a.emailTo}`))
-
-  let sent = 0, skipped = 0, failed = 0
-  const sentBuyers: string[] = []
-
-  for (const m of dueSoonOrOverdue) {
-    const recipients: string[] = []
-    if (m.responsibleEmail) recipients.push(m.responsibleEmail)
-    if (m.coordinatorEmail && m.coordinatorEmail !== m.responsibleEmail) {
-      recipients.push(m.coordinatorEmail)
-    }
-
-    if (!recipients.length) {
-      console.log(`  ⚠️  ${m.buyerName} — no email addresses, skipped`)
-      continue
-    }
-
-    // Dedup: if all recipients already got an alert today, skip the whole send
-    const allDedup = recipients.every((email) => sentToday.has(`${m.id}|${email}`))
-    if (allDedup) {
-      console.log(`  ⏭️  ${m.buyerName} — already alerted today, skipped`)
-      skipped += recipients.length
-      continue
-    }
-
-    process.stdout.write(`  📤 ${m.buyerName.padEnd(40).slice(0, 40)} [${m.tier}] → `)
-
-    const { ok, reason } = await sendMeetingReminderEmail({
-      meetingId:         m.id,
-      buyerName:         m.buyerName,
-      country:           m.country,
-      tier:              m.tier,
-      nextDueDate:       new Date(m.nextDueDate),
-      daysRemaining:     m.daysRemaining,
-      responsiblePerson: m.responsiblePerson,
-      responsibleEmail:  m.responsibleEmail,
-      salesCoordinator:  m.salesCoordinator,
-      coordinatorEmail:  m.coordinatorEmail,
-      target:            m.target,
-      actual:            m.actual,
-      achievementPct:    m.achievementPct,
-      lastMeetingDate:   m.lastMeetingDate,
-    })
-
-    // Log each recipient to the alert log
-    for (const email of recipients) {
-      if (sentToday.has(`${m.id}|${email}`)) continue
-      await addAlertLogEntry({
-        meetingId: m.id,
-        buyerName: m.buyerName,
-        alertDate: todayISO,
-        emailTo:   email,
-        status:    ok ? "SENT" : "FAILED",
-      })
-    }
-
-    if (ok) {
-      sent += recipients.length
-      sentBuyers.push(m.buyerName)
-      console.log(`✓ ${recipients.length} recipient${recipients.length === 1 ? "" : "s"}`)
-    } else {
-      failed += recipients.length
-      console.log(`✗ ${reason}`)
+  if (result.skipped) {
+    console.log(`⏭️  Batch skipped: ${result.skipReason}`)
+  } else {
+    console.log(`Total eligible buyers:  ${result.candidates}`)
+    console.log(`Persons emailed:        ${result.batchSize}`)
+    console.log(`Emails sent:            ${result.sent}`)
+    console.log(`Emails failed:          ${result.failed}`)
+    console.log("")
+    for (const p of result.buyersSent) {
+      const icon = p.status === "SENT" ? "✓" : "✗"
+      console.log(`  ${icon} ${p.buyerName.padEnd(30)} [${p.tier}] — ${p.recipients} meeting${p.recipients === 1 ? "" : "s"}`)
     }
   }
 
   console.log("\n" + "═".repeat(70))
-  console.log("📊 SUMMARY")
-  console.log("═".repeat(70))
-  console.log(`  Emails sent:    ${sent}`)
-  console.log(`  Skipped (dedup): ${skipped}`)
-  console.log(`  Failed:         ${failed}`)
-  console.log(`  Total buyers:   ${sentBuyers.length}`)
-
-  if (sentBuyers.length) {
-    console.log(`\nBuyers notified:`)
-    sentBuyers.forEach((b) => console.log(`  • ${b}`))
-  }
-
-  console.log("\n✅ Done. All alerts logged to ALERT_LOG_8020 sheet.")
-  console.log("   Reminder cycle: emails continue daily until 'Done' is clicked.\n")
+  console.log("✅ Done. All alerts logged to ALERT_LOG_8020 sheet.")
+  console.log("   Each person receives max 1 consolidated email per day.\n")
 }
 
 main().catch((e) => {
