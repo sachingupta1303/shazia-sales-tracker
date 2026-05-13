@@ -39,6 +39,8 @@ export const SHEET_NAMES = {
   MEETING_SCHEDULE_8020:  "MEETING_SCHEDULE_8020",
   MEETING_HISTORY_8020:   "MEETING_HISTORY_8020",
   ALERT_LOG_8020:         "ALERT_LOG_8020",
+  // Magic-link done tokens (no-login meeting completion)
+  MEETING_DONE_TOKENS:    "MEETING_DONE_TOKENS",
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

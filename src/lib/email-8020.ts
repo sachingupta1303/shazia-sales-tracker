@@ -12,6 +12,7 @@
  */
 import { sendMail, APP_BASE_URL, esc } from "./mailer"
 import { TIER_LABEL } from "./8020-utils"
+import { createDoneToken } from "./data"
 
 export interface MeetingReminderPayload {
   meetingId?:        string   // optional only for legacy callers; required for working CTA
@@ -47,6 +48,18 @@ export async function sendMeetingReminderEmail(
     to.push(p.coordinatorEmail)
   }
   if (!to.length) return { ok: false, reason: "no_recipients" }
+
+  // Generate a one-time magic-link token so coordinator can mark done without login
+  let doneUrl = `${APP_BASE_URL}/8020`
+  if (p.meetingId) {
+    try {
+      const token = await createDoneToken(p.meetingId, p.buyerName)
+      doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(p.meetingId)}?token=${token}`
+    } catch {
+      // Token creation failed — fall back to login-based URL
+      doneUrl = `${APP_BASE_URL}/8020/done/${encodeURIComponent(p.meetingId)}`
+    }
+  }
 
   const isOverdue      = p.daysRemaining < 0
   const isToday        = p.daysRemaining === 0
@@ -185,7 +198,7 @@ export async function sendMeetingReminderEmail(
 
   <!-- CTA BUTTON -->
   <tr><td style="padding:24px 28px;text-align:center">
-    <a href="${p.meetingId ? `${APP_BASE_URL}/8020/done/${encodeURIComponent(p.meetingId)}` : `${APP_BASE_URL}/8020`}" target="_blank" rel="noopener"
+    <a href="${doneUrl}" target="_blank" rel="noopener"
       style="display:inline-block;padding:14px 32px;background:#16a34a;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px;box-shadow:0 2px 8px rgba(22,163,74,.3)">
       ✓ Mark Meeting as Done
     </a>

@@ -2269,3 +2269,78 @@ export async function undoLastMeeting(params: {
     removedHistoryId: removed.id,
   }
 }
+
+// ─── Magic-Link Done Tokens ───────────────────────────────────────────────────
+// Stored in MEETING_DONE_TOKENS sheet (auto-created in SALES_TRACKING).
+// Columns: TOKEN | MEETING_ID | BUYER_NAME | EXPIRES_AT | USED | CREATED_AT
+
+const TOKEN_HEADERS = ["TOKEN", "MEETING_ID", "BUYER_NAME", "EXPIRES_AT", "USED", "CREATED_AT"]
+const TOKEN_EXPIRY_DAYS = 7
+
+async function ensureTokenSheet() {
+  await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS, TOKEN_HEADERS)
+}
+
+/** Generate a secure random token (hex string) */
+function generateToken(): string {
+  // Works in both Node.js (crypto.randomUUID) and edge runtimes
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID().replace(/-/g, "")
+  }
+  // Fallback: Math.random based (less secure, but functional)
+  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join("")
+}
+
+/**
+ * Create a one-time token for marking a specific meeting as done.
+ * Stores in MEETING_DONE_TOKENS sheet. Returns the token string.
+ */
+export async function createDoneToken(meetingId: string, buyerName: string): Promise<string> {
+  await ensureTokenSheet()
+  const token     = generateToken()
+  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const createdAt = new Date().toISOString()
+  await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS, [
+    [token, meetingId, buyerName, expiresAt, "false", createdAt],
+  ])
+  return token
+}
+
+/**
+ * Validate a done token. Returns the meetingId if valid, null otherwise.
+ * A token is valid if: exists + not expired + not already used.
+ */
+export async function validateDoneToken(token: string): Promise<string | null> {
+  await ensureTokenSheet()
+  const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS)
+  if (rows.length < 2) return null
+  const [header, ...data] = rows
+  const hm = buildHeaderMap(header)
+  const row = data.find((r) => getCell(r, hm, "TOKEN") === token)
+  if (!row) return null
+  const used      = getCell(row, hm, "USED").toLowerCase() === "true"
+  const expiresAt = getCell(row, hm, "EXPIRES_AT")
+  if (used) return null
+  if (expiresAt && new Date(expiresAt) < new Date()) return null
+  return getCell(row, hm, "MEETING_ID") || null
+}
+
+/**
+ * Mark a token as used (after successful meeting completion).
+ */
+export async function consumeDoneToken(token: string): Promise<void> {
+  await ensureTokenSheet()
+  const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS)
+  if (rows.length < 2) return
+  const [header, ...data] = rows
+  const hm = buildHeaderMap(header)
+  const rowIdx = data.findIndex((r) => getCell(r, hm, "TOKEN") === token)
+  if (rowIdx === -1) return
+  // Update USED column (col index 4, 0-based)
+  const usedColIdx = hm["USED"] ?? 4
+  const fullRow = [...(data[rowIdx] ?? [])]
+  while (fullRow.length <= usedColIdx) fullRow.push("")
+  fullRow[usedColIdx] = "true"
+  await updateSheetRow(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS, rowIdx + 2, fullRow)
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS)
+}
