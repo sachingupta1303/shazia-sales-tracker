@@ -1364,13 +1364,6 @@ export function WorkspaceClient({ code, userRole, userName, salesPerson, allSale
         </div>
       </div>
 
-      {/* ── 1-Tap Quick Activity Bar ── */}
-      <QuickActivityBar
-        buyer={buyer}
-        salesPerson={effectiveSP}
-        onLogged={(msg) => { setToast(msg); fetchActivities() }}
-      />
-
       {/* ── KPI Row ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard label="FY Target"  value={formatNumber(buyer.target, 0)}        sub="containers"  color="bg-gray-50 border-gray-200" />

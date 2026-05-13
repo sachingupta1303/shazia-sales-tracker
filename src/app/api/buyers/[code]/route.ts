@@ -60,8 +60,15 @@ export async function GET(
     return c ?? makeCode(r.buyerCompanyName)
   }
 
-  const matchedCurrentPI = currentPI.filter((r) => resolveCode(r) === code)
+  const matchedCurrentPI  = currentPI.filter((r) => resolveCode(r) === code)
   const matchedPreviousPI = previousPI.filter((r) => resolveCode(r) === code)
+
+  // ── FY fallback: if currentFY has no data but previousFY does, show previousFY ──
+  // (handles the start of a new FY when all real orders are still in previous year)
+  const hasCurrent = matchedCurrentPI.length > 0
+  const activeFY   = hasCurrent ? currentFY : previousFY
+  const activePI   = hasCurrent ? matchedCurrentPI : matchedPreviousPI
+  const activeWeek = hasCurrent ? currentWeek : 52  // show full year for prev FY
 
   // If raw code (no canonical map), also try matching by buyer code or name directly
   const isRaw = code.startsWith("raw_")
@@ -86,25 +93,26 @@ export async function GET(
       || normName(b.buyerCompanyName) === normName(displayName)
   )
 
-  // Aggregate performance
-  const actual       = matchedCurrentPI.reduce((s, r) => s + r.totalContainers, 0)
-  const prevActual   = matchedPreviousPI.reduce((s, r) => s + r.totalContainers, 0)
-  const orderCount   = matchedCurrentPI.length
+  // Aggregate performance — use activeFY (falls back to previousFY if no current data)
+  const actual     = activePI.reduce((s, r) => s + r.totalContainers, 0)
+  const prevActual = (hasCurrent ? matchedPreviousPI : filterPIByFY(allPI, getPreviousFY(previousFY)).filter((r) => resolveCode(r) === code))
+    .reduce((s, r) => s + r.totalContainers, 0)
+  const orderCount = activePI.length
 
-  // Target
-  const tgtCurrent = targets
-    .filter((t) => t.financialYear === currentFY && normName(t.buyerCompanyName) === normName(displayName))
+  // Target — match activeFY
+  const tgtActive = targets
+    .filter((t) => t.financialYear === activeFY && normName(t.buyerCompanyName) === normName(displayName))
     .reduce((s, t) => s + t.currentYearTargetContainers, 0)
-  const target = canonical?.targetFY2026 || tgtCurrent
+  const target = canonical?.targetFY2026 || tgtActive
 
-  const targetDue    = targetDueTillWeek(target, currentWeek)
-  const gap          = actual - targetDue
+  const targetDue      = targetDueTillWeek(target, activeWeek)
+  const gap            = actual - targetDue
   const achievementPct = target > 0 ? Math.round((actual / target) * 100) : 0
-  const status       = getStatus(target, actual, targetDue) as PerformanceStatus
+  const status         = getStatus(target, actual, targetDue) as PerformanceStatus
 
   // Weekly breakdown for health + chart
   const byWeek = new Map<number, number>()
-  for (const r of matchedCurrentPI) {
+  for (const r of activePI) {
     byWeek.set(r.fyWeekNo, (byWeek.get(r.fyWeekNo) ?? 0) + r.totalContainers)
   }
 
@@ -114,15 +122,15 @@ export async function GET(
   })
 
   // Last order
-  const sortedDates = matchedCurrentPI.map((r) => r.piDate).filter(Boolean).sort().reverse()
+  const sortedDates = activePI.map((r) => r.piDate).filter(Boolean).sort().reverse()
   const lastOrderDate = sortedDates[0] ?? ""
   const weeksSinceLast = lastOrderDate
     ? Math.floor((Date.now() - new Date(lastOrderDate).getTime()) / (86_400_000 * 7))
     : 99
 
-  // 80/20 tier — approximate from target relative to all current FY targets
+  // 80/20 tier — approximate from target relative to active FY targets
   const totalTargetAll = targets
-    .filter((t) => t.financialYear === currentFY)
+    .filter((t) => t.financialYear === activeFY)
     .reduce((s, t) => s + t.currentYearTargetContainers, 0)
   const tier: BuyerTier =
     totalTargetAll > 0 && target / totalTargetAll >= 0.05
@@ -177,6 +185,6 @@ export async function GET(
     piHistory,
     weeklyBars,
     meetingCompliance,
-    meta: { currentFY, currentWeek, canonicalMapActive: !!SHEETS.CANONICAL_MAP },
+    meta: { currentFY: activeFY, currentWeek: activeWeek, canonicalMapActive: !!SHEETS.CANONICAL_MAP },
   })
 }
