@@ -17,16 +17,23 @@
 
 import { NextResponse } from "next/server"
 import { runReminderBatch } from "@/lib/8020-batch"
-
-const CRON_SECRET = process.env.CRON_SECRET ?? ""
+import { auth } from "@/lib/auth"
 
 function isAuthorized(req: Request): boolean {
-  if (!CRON_SECRET) return true
-  return req.headers.get("authorization") === `Bearer ${CRON_SECRET}`
+  const secret = process.env.CRON_SECRET ?? ""
+  if (!secret) return true
+  return req.headers.get("authorization") === `Bearer ${secret}`
 }
 
 export async function GET(req: Request) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  // Allow: valid Bearer token (GitHub Actions / Vercel cron) OR logged-in Manager+
+  const bearerOk = isAuthorized(req)
+  if (!bearerOk) {
+    const session = await auth()
+    const role = (session?.user as { role?: string })?.role ?? ""
+    const sessionOk = ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"].includes(role)
+    if (!sessionOk) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
 
   const url = new URL(req.url)
   const force     = url.searchParams.get("force") === "1"
