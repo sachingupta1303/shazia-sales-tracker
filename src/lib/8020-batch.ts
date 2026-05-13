@@ -18,9 +18,8 @@
  *   12:00 UTC = 17:30 IST
  */
 
-import { getMeetingSchedules, getAlertLogRows, addAlertLogEntry, createDoneToken } from "./data"
+import { getMeetingSchedules, getAlertLogRows, addAlertLogEntry } from "./data"
 import { sendConsolidatedEmail, type ConsolidatedMeetingRow } from "./email-8020"
-import { APP_BASE_URL } from "./mailer"
 import type { MeetingSchedule } from "@/types"
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -206,33 +205,20 @@ export async function runReminderBatch(opts: {
     })
   }
 
-  // ── 8. Send to Coordinators (with magic-link tokens per row) ─────────────────
+  // ── 8. Send to Coordinators ────────────────────────────────────────────────────
   for (const [email, { name, meetings: mList }] of byCoordinator) {
     if (sentTodayEmails.has(email)) continue
 
-    // Generate magic link tokens in parallel
-    const rows: ConsolidatedMeetingRow[] = await Promise.all(
-      mList.map(async (m) => {
-        let doneUrl = `${APP_BASE_URL}/8020`
-        try {
-          const token = await createDoneToken(m.id, m.buyerName)
-          doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
-        } catch {
-          // token creation failed — fallback to 8020 dashboard
-        }
-        return {
-          meetingId:         m.id,
-          buyerName:         m.buyerName,
-          country:           m.country,
-          tier:              m.tier,
-          responsiblePerson: m.responsiblePerson,
-          nextDueDate:       m.nextDueDate,
-          daysRemaining:     m.daysRemaining,
-          displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
-          doneUrl,
-        }
-      })
-    )
+    const rows: ConsolidatedMeetingRow[] = mList.map((m) => ({
+      meetingId:         m.id,
+      buyerName:         m.buyerName,
+      country:           m.country,
+      tier:              m.tier,
+      responsiblePerson: m.responsiblePerson,
+      nextDueDate:       m.nextDueDate,
+      daysRemaining:     m.daysRemaining,
+      displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
+    }))
 
     const { ok } = await sendConsolidatedEmail({
       personName:  name,

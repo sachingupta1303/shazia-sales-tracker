@@ -68,11 +68,8 @@ async function main() {
   console.log(`Result: ${r1.ok ? "✓ SENT" : `✗ ${r1.reason}`}`)
   if ((r1 as { previewUrl?: string }).previewUrl) console.log(`   Preview: ${(r1 as { previewUrl?: string }).previewUrl}`)
 
-  // 6. Send Coordinator email (with done buttons)
-  const coordMeetings = testMeetings.map((m, i) => ({
-    ...m,
-    doneUrl: `https://example.com/meeting-done/${m.meetingId}?token=test-token-${i}`,
-  }))
+  // 6. Send Coordinator email
+  const coordMeetings = testMeetings.map((m) => ({ ...m }))
   console.log(`\n📤 Sending Sales Coordinator consolidated email...`)
   const r2 = await sendConsolidatedEmail({
     personName:  "Atif Coordinator",

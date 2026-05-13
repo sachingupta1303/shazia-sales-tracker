@@ -2,10 +2,10 @@
  * 80/20 Key Account — Consolidated meeting reminder emails.
  *
  * One email per person per day:
- *   • Responsible Person  → list of ALL their buyers due/overdue (no done button)
- *   • Sales Coordinator   → list of ALL meetings they coordinate + "✓ Done" button per row
+ *   • Responsible Person  → list of ALL their buyers due/overdue
+ *   • Sales Coordinator   → list of ALL meetings they coordinate (with Responsible Person column)
  */
-import { sendMail, APP_BASE_URL, esc } from "./mailer"
+import { sendMail, esc } from "./mailer"
 import { TIER_LABEL } from "./8020-utils"
 
 export interface ConsolidatedMeetingRow {
@@ -17,7 +17,6 @@ export interface ConsolidatedMeetingRow {
   nextDueDate:       string   // ISO date string YYYY-MM-DD
   daysRemaining:     number
   displayStatus:     "OVERDUE" | "DUE_SOON"
-  doneUrl?:          string   // pre-generated magic link (coordinator only)
 }
 
 export async function sendConsolidatedEmail(params: {
@@ -41,7 +40,7 @@ export async function sendConsolidatedEmail(params: {
     .sort((a, b) => a.daysRemaining - b.daysRemaining)   // soonest first
 
   const subject = isCoord
-    ? `📋 ${count} Meeting${count > 1 ? "s" : ""} to Schedule — Action Needed (${personName})`
+    ? `📋 ${count} Meeting${count > 1 ? "s" : ""} to Schedule — ${personName}`
     : `📋 ${count} Meeting Reminder${count > 1 ? "s" : ""} — ${personName}`
 
   // ── Row builder ──────────────────────────────────────────────────────────────
@@ -70,18 +69,6 @@ export async function sendConsolidatedEmail(params: {
       ? `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
       : ""
 
-    const doneCell = isCoord
-      ? `<td style="padding:10px 14px;text-align:center;border-bottom:1px solid #f3f4f6">
-           ${m.doneUrl
-             ? `<a href="${esc(m.doneUrl)}" target="_blank" rel="noopener"
-                  style="display:inline-block;padding:5px 14px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
-                  ✓ Done
-                </a>`
-             : `<span style="color:#9ca3af;font-size:12px">—</span>`
-           }
-         </td>`
-      : ""
-
     return `
       <tr>
         <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6">${esc(m.buyerName)}</td>
@@ -94,7 +81,6 @@ export async function sendConsolidatedEmail(params: {
         <td style="padding:10px 14px;border-bottom:1px solid #f3f4f6">
           <span style="background:${statusBg};color:${statusColor};padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap">${statusText}</span>
         </td>
-        ${doneCell}
       </tr>`
   }
 
@@ -104,9 +90,6 @@ export async function sendConsolidatedEmail(params: {
 
     const respHeader = isCoord
       ? `<th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Responsible</th>`
-      : ""
-    const doneHeader = isCoord
-      ? `<th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Action</th>`
       : ""
 
     return `
@@ -124,7 +107,6 @@ export async function sendConsolidatedEmail(params: {
               ${respHeader}
               <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Due Date</th>
               <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Status</th>
-              ${doneHeader}
             </tr>
           </thead>
           <tbody>
@@ -144,10 +126,9 @@ export async function sendConsolidatedEmail(params: {
 
   const noteBox = isCoord
     ? `<tr><td style="padding:16px 28px 0">
-         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px">
-           <p style="margin:0;font-size:13px;color:#166534;line-height:1.6">
-             <strong>Your action:</strong> Click <strong>✓ Done</strong> next to each buyer once the meeting is confirmed or done.
-             No login required — just click and fill a quick form. Each link works only once.
+         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px">
+           <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.6">
+             <strong>Action required:</strong> Please schedule the meetings listed above with the respective responsible persons as soon as possible.
            </p>
          </div>
        </td></tr>`
