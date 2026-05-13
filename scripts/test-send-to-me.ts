@@ -1,7 +1,7 @@
 /**
  * Sends TWO test emails to research@shaziarice.com:
- *   1. Responsible Person view (list only, no done button)
- *   2. Sales Coordinator view (list + ✓ Done buttons)
+ *   1. Responsible Person view (plain list)
+ *   2. Sales Coordinator view (plain list + Responsible Person column)
  *
  * Uses REAL meeting data from the sheet.
  * Run: npx tsx scripts/test-send-to-me.ts
@@ -123,8 +123,8 @@ async function main() {
 
   console.log("═".repeat(70))
   console.log(`✅ Done! Check inbox: ${TEST_EMAIL}`)
-  console.log("   Email 1 = Responsible Person view (no buttons)")
-  console.log("   Email 2 = Sales Coordinator view (with ✓ Done buttons)\n")
+  console.log("   Email 1 = Responsible Person view (plain list)")
+  console.log("   Email 2 = Sales Coordinator view (plain list + Responsible Person column)\n")
 }
 
 main().catch(e => {
