@@ -17,11 +17,20 @@ export async function GET() {
   // First, verify the SMTP connection (catches wrong credentials/host early)
   const verify = await verifySmtp()
   if (!verify.ok) {
+    // Attach env-var presence info to help diagnose "not configured" errors
+    const diagEnv = {
+      SMTP_HOST:  !!(process.env.SMTP_HOST),
+      SMTP_USER:  !!(process.env.SMTP_USER),
+      SMTP_PASS:  !!(process.env.SMTP_PASS),
+      SMTP_PORT:  process.env.SMTP_PORT ?? "(not set)",
+      configured: !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
+    }
     return NextResponse.json({
       ok: false,
       step: "smtp_verify",
       error: verify.error,
-      hint: "Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env.local",
+      hint: "Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars",
+      diagEnv,
     }, { status: 500 })
   }
 

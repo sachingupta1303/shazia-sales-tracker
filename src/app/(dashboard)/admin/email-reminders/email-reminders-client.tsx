@@ -10,6 +10,13 @@ interface SmtpResult {
   reason?: string
   error?: string
   hint?: string
+  diagEnv?: {
+    SMTP_HOST: boolean
+    SMTP_USER: boolean
+    SMTP_PASS: boolean
+    SMTP_PORT: string
+    configured: boolean
+  }
 }
 
 interface BatchResult {
@@ -145,6 +152,23 @@ export function EmailRemindersClient() {
                 <p className="text-xs mt-1">{smtpResult.error ?? smtpResult.reason}</p>
                 {smtpResult.hint && (
                   <p className="text-xs mt-1 text-red-600 font-medium">{smtpResult.hint}</p>
+                )}
+                {smtpResult.diagEnv && (
+                  <div className="mt-2 p-2 bg-red-100 rounded text-xs font-mono space-y-0.5">
+                    <p className="font-semibold text-red-900 mb-1">Vercel env vars seen by server:</p>
+                    {(["SMTP_HOST","SMTP_USER","SMTP_PASS"] as const).map(k => (
+                      <p key={k}>
+                        {smtpResult.diagEnv![k as "SMTP_HOST"|"SMTP_USER"|"SMTP_PASS"]
+                          ? <span className="text-green-700">✓ {k} set</span>
+                          : <span className="text-red-700">✗ {k} MISSING</span>
+                        }
+                      </p>
+                    ))}
+                    <p className="text-gray-600">SMTP_PORT: {smtpResult.diagEnv.SMTP_PORT}</p>
+                    <p className={smtpResult.diagEnv.configured ? "text-green-700 font-bold" : "text-red-700 font-bold"}>
+                      configured: {String(smtpResult.diagEnv.configured)}
+                    </p>
+                  </div>
                 )}
               </>
             )}
