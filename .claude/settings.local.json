@@ -16,7 +16,8 @@
       "Bash(git add *)",
       "Bash(curl -s \"https://shazia-sales-tracker-gvmj.vercel.app/api/8020/cron-batch?force=1\" -H \"Authorization: Bearer \")",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(curl -s \"https://shazia-sales-tracker-gvmj.vercel.app/api/8020/test-email\" -H \"Cookie: \")"
     ]
   }
 }
