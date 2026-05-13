@@ -16,36 +16,36 @@
 
 import nodemailer, { type Transporter } from "nodemailer"
 
-const SMTP_HOST     = process.env.SMTP_HOST     ?? ""
-const SMTP_PORT     = parseInt(process.env.SMTP_PORT ?? "587", 10)
-const SMTP_USER     = process.env.SMTP_USER     ?? ""
-const SMTP_PASS     = process.env.SMTP_PASS     ?? ""
-const SMTP_SECURE_RAW = process.env.SMTP_SECURE
-const SMTP_SECURE   = SMTP_SECURE_RAW
-  ? SMTP_SECURE_RAW.toLowerCase() === "true"
-  : SMTP_PORT === 465
+// Read at call-time (not module-load) so Vercel env vars are always fresh
+function getSmtpConfig() {
+  const host = process.env.SMTP_HOST ?? ""
+  const port = parseInt(process.env.SMTP_PORT ?? "587", 10)
+  const user = process.env.SMTP_USER ?? ""
+  const pass = process.env.SMTP_PASS ?? ""
+  const secureRaw = process.env.SMTP_SECURE
+  const secure = secureRaw ? secureRaw.toLowerCase() === "true" : port === 465
+  return { host, port, user, pass, secure }
+}
 
 export const MAIL_FROM     = process.env.SMTP_FROM     ?? "Shazia Rice <alerts@shaziarice.com>"
 export const MAIL_REPLY_TO = process.env.SMTP_REPLY_TO ?? ""
 export const APP_BASE_URL  = process.env.APP_BASE_URL  ?? "http://localhost:3000"
 
-let cachedTransport: Transporter | null = null
-
 function isConfigured(): boolean {
-  return Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS)
+  const { host, user, pass } = getSmtpConfig()
+  return Boolean(host && user && pass)
 }
 
-/** Returns a singleton nodemailer transport, or null if SMTP is not configured. */
+/** Returns a fresh nodemailer transport using current env vars. */
 export function getMailer(): Transporter | null {
   if (!isConfigured()) return null
-  if (cachedTransport) return cachedTransport
-  cachedTransport = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_SECURE,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  const { host, port, user, pass, secure } = getSmtpConfig()
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
   })
-  return cachedTransport
 }
 
 /**

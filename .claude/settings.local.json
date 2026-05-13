@@ -13,7 +13,10 @@
       "Bash(curl -s --max-time 30 http://localhost:3000/api/debug/data-health -H \"Cookie: $\\(curl -s -c - http://localhost:3000)",
       "Bash(awk '{print $6\"=\"$7}')",
       "Bash(npm run *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(curl -s \"https://shazia-sales-tracker-gvmj.vercel.app/api/8020/cron-batch?force=1\" -H \"Authorization: Bearer \")",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }
