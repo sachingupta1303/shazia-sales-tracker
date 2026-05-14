@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import {
   TIER_LABEL,
@@ -46,6 +47,11 @@ interface DashboardData {
 
 const SHEET_ID  = "1qzzYldUVUe4WrxsR1lOHvFKOaXcLogxFmRLpMiQB6t0"
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}`
+
+/** Convert buyer name → buyer workspace URL slug (e.g. "Suncons Trading & Co" → "raw_suncons_trading_co") */
+function buyerSlug(name: string): string {
+  return "raw_" + name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_+$/g, "")
+}
 
 interface MeetingsData {
   meetings: MeetingSchedule[]
@@ -687,8 +693,20 @@ export function Dashboard8020Client({ user }: { user: AppUser }) {
                 >
                   <td className="px-2 py-2.5 text-gray-400 tabular-nums text-center text-xs">{pageStart + i + 1}</td>
                   <td className="px-2 py-2.5 max-w-[220px]">
-                    <p className="font-semibold text-gray-800 truncate">{m.buyerName}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{m.country}</p>
+                    <Link
+                      href={`/buyers/${buyerSlug(m.buyerName)}`}
+                      className="font-semibold text-gray-800 truncate block hover:text-green-700 hover:underline transition-colors"
+                      title={`Open ${m.buyerName} workspace`}
+                    >
+                      {m.buyerName}
+                    </Link>
+                    <Link
+                      href={`/countries/${m.country.toUpperCase()}`}
+                      className="text-[10px] text-gray-400 mt-0.5 block hover:text-blue-600 hover:underline transition-colors"
+                      title={`Open ${m.country} workspace`}
+                    >
+                      {m.country}
+                    </Link>
                   </td>
                   <td className="px-2 py-2.5 text-center"><TierBadge tier={m.tier} /></td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[120px] truncate">
