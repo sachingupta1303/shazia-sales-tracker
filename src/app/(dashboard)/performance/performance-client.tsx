@@ -101,7 +101,7 @@ interface CoordResponse {
   filterOptions: { coordinators: string[] }
 }
 
-type Tab = "buyers" | "countries" | "salesperson" | "coordinator"
+type Tab = "buyers" | "countries" | "salesperson" | "coordinator" | "meetings"
 
 interface Props {
   userRole?: UserRole
@@ -934,12 +934,14 @@ export function PerformanceClient({ userRole, salesPerson, allSalesPersons, allC
     ? [
         { key: "buyers",    label: "👤 Buyer-wise" },
         { key: "countries", label: "🌍 Country-wise" },
+        { key: "meetings",  label: "🤝 Meeting Report" },
       ]
     : [
         { key: "buyers",      label: "👤 Buyer-wise" },
         { key: "countries",   label: "🌍 Country-wise" },
         { key: "salesperson", label: "🧑‍💼 Sales Person" },
         { key: "coordinator", label: "📋 Coordinator" },
+        { key: "meetings",    label: "🤝 Meeting Report" },
       ]
 
   const onCoordOptions = useCallback((opts: string[]) => setCoordinators(opts), [])
@@ -973,7 +975,200 @@ export function PerformanceClient({ userRole, salesPerson, allSalesPersons, allC
       {tab === "countries"   && <CountryTab     filters={filters} />}
       {tab === "salesperson" && !isSP && <SPTab filters={filters} />}
       {tab === "coordinator" && !isSP && <CoordinatorTab filters={filters} onCoordOptions={onCoordOptions} />}
+      {tab === "meetings"    && <MeetingReportTab />}
     </div>
   )
 }
 
+// ── Meeting Report Tab ───────────────────────────────────────────────────────
+
+interface MeetingRow {
+  id: string; buyerName: string; country: string; tier: string
+  responsiblePerson: string; salesCoordinator: string
+  lastMeetingDate: string | null; nextDueDate: string
+  daysRemaining: number; displayStatus: string
+  doneThisPeriod: boolean; totalMeetingsDone: number
+}
+interface MeetingReportData {
+  rows: MeetingRow[]
+  kpis: { total: number; done: number; neverMet: number; overdue: number; dueSoon: number; upcoming: number }
+  responsiblePersons: string[]
+}
+
+const PERIODS = [
+  { value: "all",      label: "All Time" },
+  { value: "q1",       label: "Q1 (Apr–Jun)" },
+  { value: "q2",       label: "Q2 (Jul–Sep)" },
+  { value: "q3",       label: "Q3 (Oct–Dec)" },
+  { value: "q4",       label: "Q4 (Jan–Mar)" },
+  { value: "month_1",  label: "April" },
+  { value: "month_2",  label: "May" },
+  { value: "month_3",  label: "June" },
+  { value: "month_4",  label: "July" },
+  { value: "month_5",  label: "August" },
+  { value: "month_6",  label: "September" },
+  { value: "month_7",  label: "October" },
+  { value: "month_8",  label: "November" },
+  { value: "month_9",  label: "December" },
+  { value: "month_10", label: "January" },
+  { value: "month_11", label: "February" },
+  { value: "month_12", label: "March" },
+]
+
+const TIER_LABEL: Record<string, string> = { TIER1: "Tier 1", TIER2: "Tier 2", TIER3: "Tier 3" }
+const TIER_COLOR: Record<string, string> = { TIER1: "bg-purple-100 text-purple-700", TIER2: "bg-blue-100 text-blue-700", TIER3: "bg-gray-100 text-gray-600" }
+const STATUS_COLOR: Record<string, string> = {
+  OVERDUE:  "bg-red-100 text-red-700",
+  DUE_SOON: "bg-amber-100 text-amber-700",
+  UPCOMING: "bg-green-100 text-green-700",
+}
+const STATUS_LABEL: Record<string, string> = { OVERDUE: "Overdue", DUE_SOON: "Due Soon", UPCOMING: "Upcoming" }
+
+function MeetingReportTab() {
+  const [period,      setPeriod]      = useState("all")
+  const [responsible, setResponsible] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [data,        setData]        = useState<MeetingReportData | null>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [search,      setSearch]      = useState("")
+
+  useEffect(() => {
+    setLoading(true)
+    const p = new URLSearchParams()
+    if (period)      p.set("period",      period)
+    if (responsible) p.set("responsible", responsible)
+    fetch(`/api/8020/meeting-report?${p}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [period, responsible])
+
+  const rows = (data?.rows ?? []).filter(r => {
+    if (statusFilter && r.displayStatus !== statusFilter) return false
+    if (search && !r.buyerName.toLowerCase().includes(search.toLowerCase()) &&
+        !r.country.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  const kpis = data?.kpis
+
+  const sel = "text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+
+  return (
+    <div className="space-y-5">
+
+      {/* Filters */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap gap-3 items-center">
+        <select value={period} onChange={e => setPeriod(e.target.value)} className={sel}>
+          {PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        <select value={responsible} onChange={e => setResponsible(e.target.value)} className={sel}>
+          <option value="">All Responsible</option>
+          {(data?.responsiblePersons ?? []).map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={sel}>
+          <option value="">All Status</option>
+          <option value="OVERDUE">Overdue</option>
+          <option value="DUE_SOON">Due Soon</option>
+          <option value="UPCOMING">Upcoming</option>
+        </select>
+        <input
+          type="text" placeholder="Search buyer / country…"
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 w-44 focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
+        {(period !== "all" || responsible || statusFilter || search) && (
+          <button onClick={() => { setPeriod("all"); setResponsible(""); setStatusFilter(""); setSearch("") }}
+            className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1.5 rounded hover:bg-red-50">
+            ✕ Clear
+          </button>
+        )}
+      </div>
+
+      {/* KPI Cards */}
+      {kpis && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { label: "Total Buyers",  value: kpis.total,    color: "border-l-gray-400",   icon: "🏢" },
+            { label: "Done (Period)", value: kpis.done,     color: "border-l-green-500",  icon: "✅" },
+            { label: "Never Met",     value: kpis.neverMet, color: "border-l-gray-400",   icon: "🚫" },
+            { label: "Overdue",       value: kpis.overdue,  color: "border-l-red-500",    icon: "🔴" },
+            { label: "Due Soon",      value: kpis.dueSoon,  color: "border-l-amber-400",  icon: "🟡" },
+            { label: "Upcoming",      value: kpis.upcoming, color: "border-l-green-400",  icon: "🟢" },
+          ].map(c => (
+            <div key={c.label} className={`bg-white border border-gray-200 rounded-xl p-4 border-l-4 ${c.color}`}>
+              <p className="text-xs text-gray-500 font-medium">{c.icon} {c.label}</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{c.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">Buyer Meeting Status</h3>
+          <span className="text-xs text-gray-400">{rows.length} buyers</span>
+        </div>
+        {loading ? (
+          <div className="p-10 text-center text-gray-400 text-sm">Loading…</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left">
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">#</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Buyer</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Country</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Tier</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Responsible</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Meeting</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Next Due</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center">Total Done</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {rows.length === 0 ? (
+                  <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400">No buyers found</td></tr>
+                ) : rows.map((r, i) => (
+                  <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-2.5 text-gray-400 tabular-nums">{i + 1}</td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-900 max-w-[200px]">
+                      <div className="truncate">{r.buyerName}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{r.country}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${TIER_COLOR[r.tier] ?? "bg-gray-100 text-gray-600"}`}>
+                        {TIER_LABEL[r.tier] ?? r.tier}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap text-xs">{r.responsiblePerson || "—"}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      {r.lastMeetingDate ? (
+                        <span className={`text-xs font-medium ${r.doneThisPeriod ? "text-green-700" : "text-gray-500"}`}>
+                          {r.doneThisPeriod && "✓ "}{new Date(r.lastMeetingDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">Never</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                      {new Date(r.nextDueDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${STATUS_COLOR[r.displayStatus] ?? "bg-gray-100 text-gray-600"}`}>
+                        {STATUS_LABEL[r.displayStatus] ?? r.displayStatus}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center tabular-nums font-semibold text-gray-700">{r.totalMeetingsDone}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
