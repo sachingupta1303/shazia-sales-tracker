@@ -6,7 +6,7 @@
  * active meeting. Returns the new token URLs so the caller can see them.
  */
 import { NextResponse } from "next/server"
-import { auth } from "@/auth"
+import { auth } from "@/lib/auth"
 import { regenAllDoneTokens } from "@/lib/data"
 import { APP_BASE_URL } from "@/lib/mailer"
 
