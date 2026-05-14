@@ -49,11 +49,13 @@ function fmtIST(iso: string | null) {
 }
 
 export function EmailRemindersClient() {
-  const [smtpLoading,  setSmtpLoading]  = useState(false)
-  const [smtpResult,   setSmtpResult]   = useState<SmtpResult | null>(null)
-  const [batchLoading, setBatchLoading] = useState(false)
-  const [batchResult,  setBatchResult]  = useState<BatchResult | null>(null)
-  const [forceBatch,   setForceBatch]   = useState(false)
+  const [smtpLoading,   setSmtpLoading]   = useState(false)
+  const [smtpResult,    setSmtpResult]    = useState<SmtpResult | null>(null)
+  const [batchLoading,  setBatchLoading]  = useState(false)
+  const [batchResult,   setBatchResult]   = useState<BatchResult | null>(null)
+  const [forceBatch,    setForceBatch]    = useState(false)
+  const [regenLoading,  setRegenLoading]  = useState(false)
+  const [regenResult,   setRegenResult]   = useState<{ ok: boolean; count?: number; message?: string; error?: string } | null>(null)
 
   async function testSmtp() {
     setSmtpLoading(true); setSmtpResult(null)
@@ -63,6 +65,16 @@ export function EmailRemindersClient() {
     } catch (e) {
       setSmtpResult({ ok: false, error: e instanceof Error ? e.message : "Network error" })
     } finally { setSmtpLoading(false) }
+  }
+
+  async function regenTokens() {
+    setRegenLoading(true); setRegenResult(null)
+    try {
+      const res = await fetch("/api/8020/regen-tokens", { method: "POST" })
+      setRegenResult(await res.json())
+    } catch (e) {
+      setRegenResult({ ok: false, error: e instanceof Error ? e.message : "Network error" })
+    } finally { setRegenLoading(false) }
   }
 
   async function sendBatch() {
@@ -283,6 +295,34 @@ export function EmailRemindersClient() {
               Ran at {fmtIST(batchResult.ranAt)} IST
               {batchResult.lastBatchSentAt && ` · Last batch: ${fmtIST(batchResult.lastBatchSentAt)} IST`}
             </p>
+          </div>
+        )}
+      </div>
+
+      {/* Regenerate Tokens */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5">
+        <h2 className="text-sm font-bold text-gray-700 mb-1">🔑 Regenerate Done Tokens</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Clears all old tokens and creates fresh permanent links for every buyer.
+          Run this once to fix any "Link Not Valid" issues. Tokens never expire after this.
+        </p>
+        <button
+          onClick={regenTokens}
+          disabled={regenLoading}
+          className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+        >
+          {regenLoading ? "Regenerating…" : "🔑 Regenerate All Tokens"}
+        </button>
+        {regenResult && (
+          <div className={`mt-3 rounded-lg p-4 border text-sm ${
+            regenResult.ok
+              ? "bg-green-50 border-green-200 text-green-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}>
+            {regenResult.ok
+              ? <><p className="font-bold">✅ Done! {regenResult.count} tokens created.</p><p className="text-xs mt-1">{regenResult.message}</p></>
+              : <p className="font-bold">❌ {regenResult.error}</p>
+            }
           </div>
         )}
       </div>

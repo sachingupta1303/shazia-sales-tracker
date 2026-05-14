@@ -209,6 +209,32 @@ export async function appendToSheet(
   })
 }
 
+// ─── Overwrite all rows (clear data + write new rows) ────────────────────────
+
+/**
+ * Replace all data rows in a sheet. Clears everything after row 1 (header)
+ * then writes `rows` starting at row 2.
+ */
+export async function overwriteSheetRows(
+  spreadsheetId: string,
+  sheetName: string,
+  rows: (string | number | null)[][]
+): Promise<void> {
+  const sheets = getSheetsClient()
+  // Clear from row 2 downward
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: `${sheetName}!A2:Z`,
+  })
+  if (rows.length === 0) return
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${sheetName}!A2`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: rows },
+  })
+}
+
 // ─── Update (single row by matching key) ─────────────────────────────────────
 
 export async function updateSheetRow(

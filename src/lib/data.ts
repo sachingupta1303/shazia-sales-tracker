@@ -7,6 +7,7 @@ import {
   readSheet,
   appendToSheet,
   updateSheetRow,
+  overwriteSheetRows,
   findRowIndexByKey,
   deleteSheetRow,
   buildHeaderMap,
@@ -2275,7 +2276,7 @@ export async function undoLastMeeting(params: {
 // Columns: TOKEN | MEETING_ID | BUYER_NAME | EXPIRES_AT | USED | CREATED_AT
 
 const TOKEN_HEADERS = ["TOKEN", "MEETING_ID", "BUYER_NAME", "EXPIRES_AT", "USED", "CREATED_AT"]
-const TOKEN_EXPIRY_DAYS = 7
+// Tokens never expire — permanent magic links
 
 async function ensureTokenSheet() {
   await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS, TOKEN_HEADERS)
@@ -2298,10 +2299,10 @@ function generateToken(): string {
 export async function createDoneToken(meetingId: string, buyerName: string): Promise<string> {
   await ensureTokenSheet()
   const token     = generateToken()
-  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const createdAt = new Date().toISOString()
+  // No expiry — tokens are permanent
   await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS, [
-    [token, meetingId, buyerName, expiresAt, "false", createdAt],
+    [token, meetingId, buyerName, "", "false", createdAt],
   ])
   return token
 }
@@ -2318,8 +2319,7 @@ export async function validateDoneToken(token: string): Promise<string | null> {
   const hm = buildHeaderMap(header)
   const row = data.find((r) => getCell(r, hm, "TOKEN") === token)
   if (!row) return null
-  const expiresAt = getCell(row, hm, "EXPIRES_AT")
-  if (expiresAt && new Date(expiresAt) < new Date()) return null
+  // No expiry check — tokens are permanent and multi-use
   return getCell(row, hm, "MEETING_ID") || null
 }
 
@@ -2341,4 +2341,30 @@ export async function consumeDoneToken(token: string): Promise<void> {
   fullRow[usedColIdx] = "true"
   await updateSheetRow(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS, rowIdx + 2, fullRow)
   invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS)
+}
+
+/**
+ * Clear ALL tokens from the sheet and regenerate fresh ones for every
+ * active meeting. Returns a map of meetingId → new token.
+ */
+export async function regenAllDoneTokens(): Promise<Map<string, string>> {
+  await ensureTokenSheet()
+
+  // Load all active meetings
+  const meetings  = await getMeetingSchedules()
+  const result    = new Map<string, string>()
+  const rows: string[][] = []
+  const createdAt = new Date().toISOString()
+
+  for (const m of meetings) {
+    const token = generateToken()
+    rows.push([token, m.id, m.buyerName, "", "false", createdAt])
+    result.set(m.id, token)
+  }
+
+  // Replace ALL existing token rows with fresh ones (keeps header at row 1)
+  await overwriteSheetRows(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS, rows)
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_DONE_TOKENS)
+
+  return result
 }
