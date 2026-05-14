@@ -16,9 +16,9 @@ async function main() {
   console.log("📧  TEST — Sending sample emails to", TEST_EMAIL)
   console.log("═".repeat(70))
 
-  const { getMeetingSchedules } = await import("../src/lib/data")
+  const { getMeetingSchedules, createDoneToken } = await import("../src/lib/data")
   const { sendConsolidatedEmail }                = await import("../src/lib/email-8020")
-  const { verifySmtp }                           = await import("../src/lib/mailer")
+  const { verifySmtp, APP_BASE_URL }             = await import("../src/lib/mailer")
 
   // 0. SMTP check
   const v = await verifySmtp()
@@ -75,17 +75,29 @@ async function main() {
 
   console.log(`Found ${eligible.length} eligible meetings from sheet.\n`)
 
-  // 2. Build rows for Responsible Person email (all eligible, no token needed)
-  const respRows = eligible.map(m => ({
-    meetingId:         m.id,
-    buyerName:         m.buyerName,
-    country:           m.country,
-    tier:              m.tier,
-    responsiblePerson: m.responsiblePerson,
-    nextDueDate:       m.nextDueDate,
-    daysRemaining:     m.daysRemaining,
-    displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
-  }))
+  // 2. Build rows with Done tokens for both emails
+  async function buildRows(meetings: typeof eligible) {
+    return Promise.all(meetings.map(async m => {
+      let doneUrl: string | undefined
+      try {
+        const token = await createDoneToken(m.id, m.buyerName)
+        doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
+      } catch { /* skip */ }
+      return {
+        meetingId:         m.id,
+        buyerName:         m.buyerName,
+        country:           m.country,
+        tier:              m.tier,
+        responsiblePerson: m.responsiblePerson,
+        nextDueDate:       m.nextDueDate,
+        daysRemaining:     m.daysRemaining,
+        displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
+        doneUrl,
+      }
+    }))
+  }
+
+  const respRows = await buildRows(eligible)
 
   console.log("📤 Sending RESPONSIBLE PERSON email...")
   console.log(`   → ${TEST_EMAIL}`)
@@ -98,17 +110,8 @@ async function main() {
   })
   console.log(`   ${r1.ok ? "✓ SENT SUCCESSFULLY" : `✗ FAILED: ${r1.reason}`}\n`)
 
-  // 3. Build rows for Coordinator email
-  const coordRows = eligible.map(m => ({
-    meetingId:         m.id,
-    buyerName:         m.buyerName,
-    country:           m.country,
-    tier:              m.tier,
-    responsiblePerson: m.responsiblePerson,
-    nextDueDate:       m.nextDueDate,
-    daysRemaining:     m.daysRemaining,
-    displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
-  }))
+  // 3. Build rows for Coordinator email (same tokens)
+  const coordRows = await buildRows(eligible)
 
   console.log("📤 Sending SALES COORDINATOR email...")
   console.log(`   → ${TEST_EMAIL}`)
