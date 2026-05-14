@@ -2,10 +2,6 @@
 
 import { useState } from "react"
 import {
-  MEETING_OUTCOMES,
-  OUTCOME_LABEL,
-  OUTCOME_BADGE,
-  OUTCOME_EMOJI,
   TIER_LABEL,
   formatDate,
   todayISO,
@@ -24,13 +20,9 @@ export function MeetingDoneClient({
   token:   string
 }) {
   const [stage,  setStage]  = useState<"form" | "done">("form")
-  const [form,   setForm]   = useState({
-    meetingDate: todayISO(),
-    outcome:     "FOLLOW_UP" as typeof MEETING_OUTCOMES[number],
-    notes:       "",
-  })
-  const [saving,  setSaving]  = useState(false)
-  const [error,   setError]   = useState("")
+  const [notes,  setNotes]  = useState(initial.meetingRemarks ?? "")
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState("")
   const [nextDue, setNextDue] = useState("")
 
   const overdue = initial.daysRemaining < 0
@@ -52,9 +44,9 @@ export function MeetingDoneClient({
         body:    JSON.stringify({
           meetingId:   initial.id,
           token,
-          meetingDate: form.meetingDate,
-          outcome:     form.outcome,
-          notes:       form.notes,
+          meetingDate: todayISO(),
+          outcome:     "FOLLOW_UP",
+          notes,
         }),
       })
       const data = await res.json()
@@ -77,10 +69,8 @@ export function MeetingDoneClient({
         <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-green-200 overflow-hidden">
           <div className="bg-green-600 px-6 py-5 text-white text-center">
             <div className="text-4xl mb-2">✓</div>
-            <h1 className="text-xl font-bold">Meeting Recorded!</h1>
-            <p className="text-sm text-green-100 mt-1">
-              {initial.buyerName} — {OUTCOME_EMOJI[form.outcome]} {OUTCOME_LABEL[form.outcome]}
-            </p>
+            <h1 className="text-xl font-bold">Meeting Done & Saved!</h1>
+            <p className="text-sm text-green-100 mt-1">{initial.buyerName}</p>
           </div>
           <div className="p-6 space-y-4 text-center">
             {nextDue && (
@@ -89,15 +79,13 @@ export function MeetingDoneClient({
                 <p className="text-lg font-bold text-blue-900">{formatDate(nextDue)}</p>
               </div>
             )}
-            {form.notes && (
+            {notes && (
               <div className="bg-gray-50 rounded-xl px-4 py-3 text-left">
-                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">Your Notes</p>
-                <p className="text-sm text-gray-700 leading-relaxed">{form.notes}</p>
+                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">Remarks Saved</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{notes}</p>
               </div>
             )}
-            <p className="text-xs text-gray-400">
-              You can close this tab now. The meeting has been saved.
-            </p>
+            <p className="text-xs text-gray-400">You can close this tab. Meeting has been recorded.</p>
             <p className="text-xs text-gray-300">Shazia Rice · 80/20 Key Account System</p>
           </div>
         </div>
@@ -164,55 +152,16 @@ export function MeetingDoneClient({
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-5">
 
-          {/* Date */}
+          {/* Remarks */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Meeting Date
-            </label>
-            <input
-              type="date"
-              required
-              value={form.meetingDate}
-              max={todayISO()}
-              onChange={(e) => setForm((f) => ({ ...f, meetingDate: e.target.value }))}
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
-
-          {/* Outcome */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Outcome <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {MEETING_OUTCOMES.map((o) => (
-                <button
-                  type="button"
-                  key={o}
-                  onClick={() => setForm((f) => ({ ...f, outcome: o }))}
-                  className={`text-left text-xs px-3 py-2.5 rounded-xl border transition-all ${
-                    form.outcome === o
-                      ? `${OUTCOME_BADGE[o]} ring-2 ring-offset-1 ring-green-400 font-bold`
-                      : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  <span className="mr-1">{OUTCOME_EMOJI[o]}</span>
-                  {OUTCOME_LABEL[o]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Meeting Notes <span className="text-gray-400 font-normal">(optional)</span>
+              Remarks <span className="text-gray-400 font-normal">(optional)</span>
             </label>
             <textarea
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              rows={3}
-              placeholder="e.g. Discussed pricing for Q3. Buyer confirmed 3 containers. PI to be sent by Friday."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              placeholder="e.g. Meeting done. Discussed Q3 pricing. Buyer confirmed 3 containers. PI to be sent by Friday."
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
             />
           </div>
@@ -228,11 +177,11 @@ export function MeetingDoneClient({
             disabled={saving}
             className="w-full py-3.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
           >
-            {saving ? "Saving…" : "✓ Confirm — Meeting Done"}
+            {saving ? "Saving…" : "✓ Mark as Done & Save"}
           </button>
 
           <p className="text-[11px] text-gray-400 text-center">
-            This link is single-use and valid for 7 days.
+            No login required. You can use this link multiple times to update remarks.
           </p>
         </form>
       </div>

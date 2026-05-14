@@ -13,10 +13,11 @@ export interface ConsolidatedMeetingRow {
   buyerName:         string
   country:           string
   tier:              string
-  responsiblePerson: string   // shown in coordinator emails
+  responsiblePerson: string
   nextDueDate:       string   // ISO date string YYYY-MM-DD
   daysRemaining:     number
   displayStatus:     "OVERDUE" | "DUE_SOON"
+  doneUrl?:          string   // magic link for Done button
 }
 
 export async function sendConsolidatedEmail(params: {
@@ -67,6 +68,16 @@ export async function sendConsolidatedEmail(params: {
 
     const respCell = `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
 
+    const doneCell = `<td style="padding:10px 14px;text-align:center;border-bottom:1px solid #f3f4f6">
+        ${m.doneUrl
+          ? `<a href="${esc(m.doneUrl)}" target="_blank" rel="noopener"
+               style="display:inline-block;padding:5px 14px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
+               ✓ Done
+             </a>`
+          : `<span style="color:#9ca3af;font-size:12px">—</span>`
+        }
+      </td>`
+
     return `
       <tr>
         <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6">${esc(m.buyerName)}</td>
@@ -79,6 +90,7 @@ export async function sendConsolidatedEmail(params: {
         <td style="padding:10px 14px;border-bottom:1px solid #f3f4f6">
           <span style="background:${statusBg};color:${statusColor};padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap">${statusText}</span>
         </td>
+        ${doneCell}
       </tr>`
   }
 
@@ -103,6 +115,7 @@ export async function sendConsolidatedEmail(params: {
               ${respHeader}
               <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Due Date</th>
               <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Status</th>
+              <th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -120,22 +133,13 @@ export async function sendConsolidatedEmail(params: {
     ? `you have ${count} meeting${count > 1 ? "s" : ""} to schedule`
     : `you have ${count} meeting${count > 1 ? "s" : ""} coming up`
 
-  const noteBox = isCoord
-    ? `<tr><td style="padding:16px 28px 0">
-         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px">
-           <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.6">
-             <strong>Action required:</strong> Please schedule the meetings listed above with the respective responsible persons as soon as possible.
-           </p>
-         </div>
-       </td></tr>`
-    : `<tr><td style="padding:16px 28px 0">
-         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 18px">
-           <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.6">
-             <strong>Note:</strong> Your Sales Coordinator will schedule these meetings.
-             This reminder is for your awareness of upcoming buyer meetings.
-           </p>
-         </div>
-       </td></tr>`
+  const noteBox = `<tr><td style="padding:16px 28px 0">
+       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px">
+         <p style="margin:0;font-size:13px;color:#166534;line-height:1.6">
+           <strong>Action:</strong> Once a meeting is done, click <strong>✓ Done</strong> next to the buyer, add your remarks and save. No login required.
+         </p>
+       </div>
+     </td></tr>`
 
   const html = `<!DOCTYPE html>
 <html lang="en">

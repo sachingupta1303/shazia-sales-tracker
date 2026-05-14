@@ -2308,7 +2308,7 @@ export async function createDoneToken(meetingId: string, buyerName: string): Pro
 
 /**
  * Validate a done token. Returns the meetingId if valid, null otherwise.
- * A token is valid if: exists + not expired + not already used.
+ * A token is valid if: exists + not expired. Multi-use — no single-use restriction.
  */
 export async function validateDoneToken(token: string): Promise<string | null> {
   await ensureTokenSheet()
@@ -2318,9 +2318,7 @@ export async function validateDoneToken(token: string): Promise<string | null> {
   const hm = buildHeaderMap(header)
   const row = data.find((r) => getCell(r, hm, "TOKEN") === token)
   if (!row) return null
-  const used      = getCell(row, hm, "USED").toLowerCase() === "true"
   const expiresAt = getCell(row, hm, "EXPIRES_AT")
-  if (used) return null
   if (expiresAt && new Date(expiresAt) < new Date()) return null
   return getCell(row, hm, "MEETING_ID") || null
 }

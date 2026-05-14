@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server"
-import { validateDoneToken, consumeDoneToken, completeMeeting } from "@/lib/data"
+import { validateDoneToken, completeMeeting } from "@/lib/data"
 
 export const dynamic = "force-dynamic"
 
@@ -58,9 +58,6 @@ export async function POST(req: Request) {
         { status: 404 }
       )
     }
-
-    // Consume token so it can't be reused
-    await consumeDoneToken(token)
 
     return NextResponse.json({ ok: true, meeting: updated })
   } catch (err) {

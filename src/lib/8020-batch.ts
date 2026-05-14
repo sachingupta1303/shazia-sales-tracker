@@ -18,8 +18,9 @@
  *   12:00 UTC = 17:30 IST
  */
 
-import { getMeetingSchedules, getAlertLogRows, addAlertLogEntry } from "./data"
+import { getMeetingSchedules, getAlertLogRows, addAlertLogEntry, createDoneToken } from "./data"
 import { sendConsolidatedEmail, type ConsolidatedMeetingRow } from "./email-8020"
+import { APP_BASE_URL } from "./mailer"
 import type { MeetingSchedule } from "@/types"
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -177,15 +178,23 @@ export async function runReminderBatch(opts: {
   for (const [email, { name, meetings: mList }] of byResponsible) {
     if (sentTodayEmails.has(email)) continue   // already sent today
 
-    const rows: ConsolidatedMeetingRow[] = mList.map(m => ({
-      meetingId:         m.id,
-      buyerName:         m.buyerName,
-      country:           m.country,
-      tier:              m.tier,
-      responsiblePerson: m.responsiblePerson,
-      nextDueDate:       m.nextDueDate,
-      daysRemaining:     m.daysRemaining,
-      displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
+    const rows: ConsolidatedMeetingRow[] = await Promise.all(mList.map(async m => {
+      let doneUrl: string | undefined
+      try {
+        const token = await createDoneToken(m.id, m.buyerName)
+        doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
+      } catch { /* fallback — no button */ }
+      return {
+        meetingId:         m.id,
+        buyerName:         m.buyerName,
+        country:           m.country,
+        tier:              m.tier,
+        responsiblePerson: m.responsiblePerson,
+        nextDueDate:       m.nextDueDate,
+        daysRemaining:     m.daysRemaining,
+        displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
+        doneUrl,
+      }
     }))
 
     const { ok } = await sendConsolidatedEmail({
@@ -219,15 +228,23 @@ export async function runReminderBatch(opts: {
   for (const [email, { name, meetings: mList }] of byCoordinator) {
     if (sentTodayEmails.has(email)) continue
 
-    const rows: ConsolidatedMeetingRow[] = mList.map((m) => ({
-      meetingId:         m.id,
-      buyerName:         m.buyerName,
-      country:           m.country,
-      tier:              m.tier,
-      responsiblePerson: m.responsiblePerson,
-      nextDueDate:       m.nextDueDate,
-      daysRemaining:     m.daysRemaining,
-      displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
+    const rows: ConsolidatedMeetingRow[] = await Promise.all(mList.map(async m => {
+      let doneUrl: string | undefined
+      try {
+        const token = await createDoneToken(m.id, m.buyerName)
+        doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
+      } catch { /* fallback — no button */ }
+      return {
+        meetingId:         m.id,
+        buyerName:         m.buyerName,
+        country:           m.country,
+        tier:              m.tier,
+        responsiblePerson: m.responsiblePerson,
+        nextDueDate:       m.nextDueDate,
+        daysRemaining:     m.daysRemaining,
+        displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
+        doneUrl,
+      }
     }))
 
     const { ok } = await sendConsolidatedEmail({
