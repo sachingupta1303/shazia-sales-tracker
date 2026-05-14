@@ -51,7 +51,7 @@ export function FilterBar({
             placeholder="Search buyer / PI…"
             value={filters.search || ""}
             onChange={(e) => set("search", e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-44 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 w-44 focus:outline-none focus:ring-2 focus:ring-green-500"
           />
         )}
 
@@ -59,7 +59,7 @@ export function FilterBar({
         <select
           value={filters.country || ""}
           onChange={(e) => set("country", e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 max-w-[160px]"
+          className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 max-w-[160px]"
         >
           <option value="">All Countries</option>
           {options?.countries?.map((c) => (
@@ -72,7 +72,7 @@ export function FilterBar({
           <select
             value={filters.salesPerson || ""}
             onChange={(e) => set("salesPerson", e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 max-w-[160px]"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 max-w-[160px]"
           >
             <option value="">All Sales Persons</option>
             {options?.salesPersons?.map((s) => (
@@ -86,7 +86,7 @@ export function FilterBar({
           <select
             value={filters.variety || ""}
             onChange={(e) => set("variety", e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">All Varieties</option>
             <option value="BASMATI">Basmati</option>
@@ -98,7 +98,7 @@ export function FilterBar({
         <select
           value={filters.fyMonth || ""}
           onChange={(e) => set("fyMonth", e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+          className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
         >
           <option value="">All Months</option>
           {FY_MONTHS.map((m, i) => (
@@ -110,7 +110,7 @@ export function FilterBar({
         <select
           value={filters.fyQuarter || ""}
           onChange={(e) => set("fyQuarter", e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+          className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
         >
           <option value="">All Quarters</option>
           <option value="1">Q1 (Apr–Jun)</option>
@@ -124,7 +124,7 @@ export function FilterBar({
           <select
             value={filters.fy || getCurrentFY()}
             onChange={(e) => set("fy", e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value={getCurrentFY()}>{getCurrentFY()}</option>
             <option value={getPreviousFY(getCurrentFY())}>{getPreviousFY(getCurrentFY())}</option>

@@ -143,7 +143,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
           <select
             value={globalFilterCountry}
             onChange={(e) => dispatch(setGlobalFilterCountry(e.target.value))}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">All Countries</option>
             {filterOptions.countries.map((c) => (
@@ -156,7 +156,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
             <select
               value={globalFilterSP}
               onChange={(e) => dispatch(setGlobalFilterSP(e.target.value))}
-              className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
             >
               <option value="">All Sales Persons</option>
               {filterOptions.salesPersons.map((s) => (
@@ -169,7 +169,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
           <select
             value={variety}
             onChange={(e) => dispatch(setVariety(e.target.value))}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">All Varieties</option>
             <option value="BASMATI">Basmati</option>
@@ -186,7 +186,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
                 dispatch(setFYQuarter(""))
               } 
             }}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">All Months</option>
             {["April","May","June","July","August","September","October","November","December","January","February","March"].map((m, i) => (
@@ -204,7 +204,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
                 dispatch(setFYQuarter(""))
               } 
             }}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">All Weeks</option>
             {Array.from({ length: 52 }, (_, i) => i + 1).map((w) => (
@@ -222,7 +222,7 @@ export function DashboardClient({ userRole, salesPerson }: Props) {
                 dispatch(setFYWeek(""))
               } 
             }}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">All Quarters</option>
             <option value="1">Q1 (Apr–Jun)</option>
