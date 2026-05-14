@@ -29,7 +29,7 @@ export default async function MeetingDonePage({
   // Validate token
   const validMeetingId = await validateDoneToken(token)
   if (!validMeetingId || validMeetingId !== id) {
-    return <ErrorPage message="This link has already been used or has expired (links are valid for 7 days). If the meeting hasn't been recorded yet, please contact your manager or log in to the tracker." />
+    return <ErrorPage message="This link has expired (links are valid for 7 days). Please use the Done button from the latest reminder email." />
   }
 
   // Load meeting data

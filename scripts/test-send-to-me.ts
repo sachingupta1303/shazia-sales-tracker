@@ -10,6 +10,8 @@ import { config } from "dotenv"
 config({ path: ".env.local" })
 
 const TEST_EMAIL   = "research@shaziarice.com"
+// Force production URL for Done button links
+process.env.APP_BASE_URL = "https://shazia-sales-tracker-gvmj.vercel.app"
 
 async function main() {
   console.log("\n" + "═".repeat(70))
