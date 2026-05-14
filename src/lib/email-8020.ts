@@ -65,9 +65,7 @@ export async function sendConsolidatedEmail(params: {
       } catch { return m.nextDueDate }
     })()
 
-    const respCell = isCoord
-      ? `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
-      : ""
+    const respCell = `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
 
     return `
       <tr>
@@ -88,9 +86,7 @@ export async function sendConsolidatedEmail(params: {
   function buildSection(emoji: string, title: string, borderColor: string, bg: string, rows: ConsolidatedMeetingRow[]): string {
     if (!rows.length) return ""
 
-    const respHeader = isCoord
-      ? `<th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Responsible</th>`
-      : ""
+    const respHeader = `<th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Responsible</th>`
 
     return `
     <tr><td style="padding:20px 28px 0">

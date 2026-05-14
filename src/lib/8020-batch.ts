@@ -145,22 +145,32 @@ export async function runReminderBatch(opts: {
   const sentTodayEmails = new Set(todaysAlerts.map(a => a.emailTo))
   result.alreadySent    = sentTodayEmails.size
 
-  // 5. Group by responsible email
+  // 5. Group by responsible email — split slash-separated emails (e.g. "a@x.com/b@x.com")
   const byResponsible = new Map<string, { name: string; meetings: MeetingSchedule[] }>()
   for (const m of sorted) {
     if (!m.responsibleEmail) continue
-    if (!byResponsible.has(m.responsibleEmail))
-      byResponsible.set(m.responsibleEmail, { name: m.responsiblePerson, meetings: [] })
-    byResponsible.get(m.responsibleEmail)!.meetings.push(m)
+    const emails = m.responsibleEmail.split("/").map(e => e.trim()).filter(Boolean)
+    const names  = m.responsiblePerson.split("/").map(n => n.trim()).filter(Boolean)
+    emails.forEach((email, i) => {
+      const name = names[i] ?? names[0] ?? m.responsiblePerson
+      if (!byResponsible.has(email))
+        byResponsible.set(email, { name, meetings: [] })
+      byResponsible.get(email)!.meetings.push(m)
+    })
   }
 
-  // 6. Group by coordinator email
+  // 6. Group by coordinator email — split slash-separated emails
   const byCoordinator = new Map<string, { name: string; meetings: MeetingSchedule[] }>()
   for (const m of sorted) {
     if (!m.coordinatorEmail) continue
-    if (!byCoordinator.has(m.coordinatorEmail))
-      byCoordinator.set(m.coordinatorEmail, { name: m.salesCoordinator, meetings: [] })
-    byCoordinator.get(m.coordinatorEmail)!.meetings.push(m)
+    const emails = m.coordinatorEmail.split("/").map(e => e.trim()).filter(Boolean)
+    const names  = m.salesCoordinator.split("/").map(n => n.trim()).filter(Boolean)
+    emails.forEach((email, i) => {
+      const name = names[i] ?? names[0] ?? m.salesCoordinator
+      if (!byCoordinator.has(email))
+        byCoordinator.set(email, { name, meetings: [] })
+      byCoordinator.get(email)!.meetings.push(m)
+    })
   }
 
   // ── 7. Send to Responsible Persons ──────────────────────────────────────────
