@@ -3,6 +3,7 @@
  * Each function returns typed data ready for API routes or server components.
  */
 
+import { createHmac } from "crypto"
 import {
   readSheet,
   appendToSheet,
@@ -2297,7 +2298,6 @@ function generateToken(): string {
  * Same meetingId always produces the same token — no sheet needed.
  */
 function computeHmacToken(meetingId: string): string {
-  const { createHmac } = require("crypto") as typeof import("crypto")
   const secret = process.env.NEXTAUTH_SECRET ?? process.env.MEETING_TOKEN_SECRET ?? "shazia-rice-token-secret-2024"
   return createHmac("sha256", secret).update(meetingId).digest("hex")
 }
