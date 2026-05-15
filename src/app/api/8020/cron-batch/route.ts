@@ -36,7 +36,9 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url)
-  const force     = url.searchParams.get("force") === "1"
+  // Vercel cron requests: always force (bypass office-hours + gap guards)
+  const isVercelCron = req.headers.get("x-vercel-cron") === "1"
+  const force     = isVercelCron || url.searchParams.get("force") === "1"
   const batchRaw  = url.searchParams.get("batchSize")
   const batchSize = batchRaw ? Math.max(1, Math.min(10, parseInt(batchRaw, 10))) : undefined
 
