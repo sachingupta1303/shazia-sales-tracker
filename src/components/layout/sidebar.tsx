@@ -62,12 +62,6 @@ const NAV_ITEMS = [
     roles: ["SALES_PERSON", "MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
   },
   {
-    label: "Alerts & Remarks",
-    href: "/alerts",
-    icon: "🔔",
-    roles: ["SALES_PERSON", "MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
-  },
-  {
     label: "Admin",
     href: "/admin",
     icon: "⚙️",
