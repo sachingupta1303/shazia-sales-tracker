@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/8020/cron-batch?force=1", "schedule": "30 4 * * *" }
+    { "path": "/api/8020/cron-batch?force=1", "schedule": "30 4 * * *" },
+    { "path": "/api/8020/cron-batch?force=1", "schedule": "30 6 * * *" }
   ]
 }
