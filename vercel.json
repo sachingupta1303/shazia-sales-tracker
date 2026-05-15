@@ -1,8 +1,9 @@
 {
   "crons": [
-    {
-      "path": "/api/8020/cron-batch",
-      "schedule": "30 4 * * *"
-    }
+    { "path": "/api/8020/cron-batch", "schedule": "0 4 * * *" },
+    { "path": "/api/8020/cron-batch", "schedule": "0 6 * * *" },
+    { "path": "/api/8020/cron-batch", "schedule": "0 8 * * *" },
+    { "path": "/api/8020/cron-batch", "schedule": "0 10 * * *" },
+    { "path": "/api/8020/cron-batch", "schedule": "0 12 * * *" }
   ]
 }
