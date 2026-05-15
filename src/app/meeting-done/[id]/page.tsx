@@ -26,10 +26,10 @@ export default async function MeetingDonePage({
     return <ErrorPage message="This link is missing its security token. Please use the button in the reminder email." />
   }
 
-  // Validate token
-  const validMeetingId = await validateDoneToken(token)
+  // Validate token — pass id so HMAC verification works without sheet access
+  const validMeetingId = await validateDoneToken(token, id)
   if (!validMeetingId || validMeetingId !== id) {
-    return <ErrorPage message="This link has expired (links are valid for 7 days). Please use the Done button from the latest reminder email." />
+    return <ErrorPage message="Link not valid. Please use the Done button from the latest reminder email." />
   }
 
   // Load meeting data

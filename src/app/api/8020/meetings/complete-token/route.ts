@@ -28,16 +28,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "meetingId and token are required" }, { status: 400 })
     }
 
-    // Validate token
-    const validMeetingId = await validateDoneToken(token)
-    if (!validMeetingId) {
+    // Validate token — pass meetingId so HMAC verification works instantly
+    const validMeetingId = await validateDoneToken(token, meetingId)
+    if (!validMeetingId || validMeetingId !== meetingId) {
       return NextResponse.json(
-        { error: "This link has expired or already been used. Please contact your coordinator." },
+        { error: "Link not valid. Please use the Done button from the latest reminder email." },
         { status: 403 }
       )
-    }
-    if (validMeetingId !== meetingId) {
-      return NextResponse.json({ error: "Token does not match this meeting." }, { status: 403 })
     }
 
     const meetingDate = body.meetingDate ?? new Date().toISOString().split("T")[0]
