@@ -19,26 +19,24 @@ import { NextResponse } from "next/server"
 import { runReminderBatch } from "@/lib/8020-batch"
 import { auth } from "@/lib/auth"
 
-function isAuthorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET ?? ""
-  if (!secret) return true
-  return req.headers.get("authorization") === `Bearer ${secret}`
-}
-
 export async function GET(req: Request) {
-  // Allow: valid Bearer token (GitHub Actions / Vercel cron) OR logged-in Manager+
-  const bearerOk = isAuthorized(req)
-  if (!bearerOk) {
+  const url          = new URL(req.url)
+  const secret       = process.env.CRON_SECRET ?? ""
+  const bearerMatch  = secret && req.headers.get("authorization") === `Bearer ${secret}`
+  const isVercelCron = req.headers.get("x-vercel-cron") === "1"
+  const noSecret     = !secret
+
+  // Allow if: no secret configured, OR bearer matches, OR Vercel cron header, OR logged-in admin
+  const allowed = noSecret || bearerMatch || isVercelCron
+  if (!allowed) {
     const session = await auth()
-    const role = (session?.user as { role?: string })?.role ?? ""
+    const role    = (session?.user as { role?: string })?.role ?? ""
     const sessionOk = ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"].includes(role)
     if (!sessionOk) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const url = new URL(req.url)
-  // Vercel cron requests: always force (bypass office-hours + gap guards)
-  const isVercelCron = req.headers.get("x-vercel-cron") === "1"
-  const force     = isVercelCron || url.searchParams.get("force") === "1"
+  // Vercel cron or bearer → force (bypass office-hours + 2-hour gap)
+  const force = isVercelCron || bearerMatch || url.searchParams.get("force") === "1"
   const batchRaw  = url.searchParams.get("batchSize")
   const batchSize = batchRaw ? Math.max(1, Math.min(10, parseInt(batchRaw, 10))) : undefined
 
