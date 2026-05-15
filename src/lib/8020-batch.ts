@@ -3,19 +3,14 @@
  *
  * One email per person per day:
  *   • Groups ALL eligible meetings (OVERDUE + DUE_SOON ≤5d) by Responsible Person
- *     → sends one consolidated list email per person (no done button)
+ *     → sends one consolidated list email per person (with ✓ Done magic-link per row)
  *   • Groups same meetings by Sales Coordinator
  *     → sends one consolidated list email per coordinator (with ✓ Done magic-link per row)
  *
  * Dedup: ALERT_LOG_8020 tracks by emailTo per day — each person gets max 1 email/day.
- * 2-hour gap guard still enforced between batch runs.
  *
- * Schedule (GitHub Actions):
- *   04:00 UTC = 09:30 IST
- *   06:00 UTC = 11:30 IST
- *   08:00 UTC = 13:30 IST
- *   10:00 UTC = 15:30 IST
- *   12:00 UTC = 17:30 IST
+ * Schedule (Vercel Cron):
+ *   04:30 UTC = 10:00 AM IST — runs once daily, sends to everyone at once
  */
 
 import { getMeetingSchedules, getAlertLogRows, addAlertLogEntry, createDoneToken } from "./data"
@@ -27,7 +22,6 @@ import type { MeetingSchedule } from "@/types"
 const OFFICE_START_MIN = 9 * 60 + 30   // 09:30 IST
 const OFFICE_END_MIN   = 18 * 60       // 18:00 IST
 const IST_OFFSET_MIN   = 5 * 60 + 30   // UTC+5:30
-const MIN_BATCH_GAP_MS = 2 * 60 * 60 * 1000  // 2-hour gap between runs
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -101,27 +95,6 @@ export async function runReminderBatch(opts: {
     getMeetingSchedules(),
     getAlertLogRows(todayISO),
   ])
-
-  // 2b. 2-hour gap guard
-  if (todaysAlerts.length > 0) {
-    const sorted = [...todaysAlerts]
-      .filter(a => a.createdAt)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    const lastSentAt = sorted[0]?.createdAt
-    if (lastSentAt) {
-      result.lastBatchSentAt = lastSentAt
-      result.nextBatchAfter  = new Date(new Date(lastSentAt).getTime() + MIN_BATCH_GAP_MS).toISOString()
-      if (!opts.force) {
-        const msSinceLast = now.getTime() - new Date(lastSentAt).getTime()
-        if (msSinceLast < MIN_BATCH_GAP_MS) {
-          const minLeft = Math.ceil((MIN_BATCH_GAP_MS - msSinceLast) / 60_000)
-          result.skipped    = true
-          result.skipReason = `Last batch was sent ${Math.floor(msSinceLast / 60_000)} min ago. Next allowed in ~${minLeft} min (2-hour gap).`
-          return result
-        }
-      }
-    }
-  }
 
   // 3. Filter eligible meetings — OVERDUE or DUE_SOON (≤5 days)
   const eligible = meetings.filter(
