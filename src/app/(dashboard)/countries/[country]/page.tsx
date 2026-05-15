@@ -26,8 +26,8 @@ export default async function CountryStrategyPage({
   return (
     <div className="flex-1 p-4 sm:p-6 space-y-4">
       <PageHeader
-        title={decoded}
-        subtitle="Country strategy · Buyer coverage · Cycle performance · Travel plans"
+        title="Country Workspace"
+        subtitle={`${decoded} · Country strategy · Buyer coverage · Cycle performance · Travel plans`}
       >
         <a
           href="/countries"

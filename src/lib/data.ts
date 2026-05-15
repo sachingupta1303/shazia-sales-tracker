@@ -197,7 +197,7 @@ export async function getTargetRecords(fy?: FinancialYear): Promise<TargetRecord
           buyerCompanyName:            b.buyerName,
           countries:                   b.country,
           salesPerson:                 b.responsiblePerson,
-          financialYear:               (b.financialYear || getPreviousFY(getCurrentFY())) as FinancialYear,
+          financialYear:               getCurrentFY() as FinancialYear,
           previousYearContainers:      0,   // not tracked in 80/20 sheet
           currentYearTargetContainers: b.annualTarget,
           targetType:                  "Manual",

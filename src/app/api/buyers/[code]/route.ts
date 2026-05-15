@@ -63,12 +63,12 @@ export async function GET(
   const matchedCurrentPI  = currentPI.filter((r) => resolveCode(r) === code)
   const matchedPreviousPI = previousPI.filter((r) => resolveCode(r) === code)
 
-  // ── FY fallback: if currentFY has no data but previousFY does, show previousFY ──
-  // (handles the start of a new FY when all real orders are still in previous year)
-  const hasCurrent = matchedCurrentPI.length > 0
-  const activeFY   = hasCurrent ? currentFY : previousFY
-  const activePI   = hasCurrent ? matchedCurrentPI : matchedPreviousPI
-  const activeWeek = hasCurrent ? currentWeek : 52  // show full year for prev FY
+  // Always show currentFY as the active FY — no fallback to previousFY.
+  // currentFY actual = PI records dated in current FY (from PI date, not FY column)
+  // prevActual      = PI records dated in previous FY
+  const activeFY   = currentFY
+  const activePI   = matchedCurrentPI
+  const activeWeek = currentWeek
 
   // If raw code (no canonical map), also try matching by buyer code or name directly
   const isRaw = code.startsWith("raw_")
@@ -79,6 +79,7 @@ export async function GET(
   // Sales person guard for SALES_PERSON role
   const sp = canonical?.primaryOwner
     || matchedCurrentPI[0]?.salesPerson
+    || matchedPreviousPI[0]?.salesPerson
     || matchedAllPI[0]?.salesPerson
     || ""
 
@@ -93,15 +94,14 @@ export async function GET(
       || normName(b.buyerCompanyName) === normName(displayName)
   )
 
-  // Aggregate performance — use activeFY (falls back to previousFY if no current data)
-  const actual     = activePI.reduce((s, r) => s + r.totalContainers, 0)
-  const prevActual = (hasCurrent ? matchedPreviousPI : filterPIByFY(allPI, getPreviousFY(previousFY)).filter((r) => resolveCode(r) === code))
-    .reduce((s, r) => s + r.totalContainers, 0)
-  const orderCount = activePI.length
+  // Aggregate performance — always currentFY as actual, previousFY as prevActual
+  const actual     = matchedCurrentPI.reduce((s, r) => s + r.totalContainers, 0)
+  const prevActual = matchedPreviousPI.reduce((s, r) => s + r.totalContainers, 0)
+  const orderCount = matchedCurrentPI.length
 
-  // Target — match activeFY
+  // Target — currentFY (80/20 Buyers sheet → always currentFY after getTargetRecords fix)
   const tgtActive = targets
-    .filter((t) => t.financialYear === activeFY && normName(t.buyerCompanyName) === normName(displayName))
+    .filter((t) => t.financialYear === currentFY && normName(t.buyerCompanyName) === normName(displayName))
     .reduce((s, t) => s + t.currentYearTargetContainers, 0)
   const target = canonical?.targetFY2026 || tgtActive
 

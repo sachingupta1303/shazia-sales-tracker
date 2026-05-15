@@ -50,6 +50,8 @@ function GrowthBadge({ pct }: { pct: number | null }) {
   )
 }
 
+const PAGE_SIZE = 10
+
 export function CountriesClient({ userRole, salesPerson }: Props) {
   const router = useRouter()
   const [data,    setData]    = useState<CountriesResponse | null>(null)
@@ -57,6 +59,7 @@ export function CountriesClient({ userRole, salesPerson }: Props) {
   const [error,   setError]   = useState("")
   const [search,  setSearch]  = useState("")
   const [onlyDream, setOnlyDream] = useState(false)
+  const [page,    setPage]    = useState(1)
 
   useEffect(() => {
     fetch("/api/countries")
@@ -71,6 +74,13 @@ export function CountriesClient({ userRole, salesPerson }: Props) {
     if (onlyDream && !c.isDreamMarket) return false
     return true
   })
+
+  const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage    = Math.min(page, totalPages)
+  const paginated   = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1) }, [search, onlyDream])
 
   if (loading) return (
     <div className="space-y-3">
@@ -99,7 +109,7 @@ export function CountriesClient({ userRole, salesPerson }: Props) {
         </div>
       )}
 
-      {/* Search + Dream Market filter */}
+      {/* Search + Dream Market filter + pagination info */}
       <div className="flex flex-wrap gap-2 items-center">
         <input
           type="text" placeholder="Search country…" value={search}
@@ -133,13 +143,13 @@ export function CountriesClient({ userRole, salesPerson }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.map((c, i) => (
+              {paginated.map((c, i) => (
                 <tr
                   key={c.country}
                   className="hover:bg-green-50 cursor-pointer transition-colors"
                   onClick={() => router.push(`/countries/${encodeURIComponent(c.country)}`)}
                 >
-                  <td className="px-3 py-3 text-gray-400 tabular-nums">{i + 1}</td>
+                  <td className="px-3 py-3 text-gray-400 tabular-nums">{(safePage - 1) * PAGE_SIZE + i + 1}</td>
                   <td className="px-4 py-3 font-semibold text-gray-800 hover:text-green-700 hover:underline">
                     {c.isDreamMarket && (
                       <span
@@ -198,7 +208,7 @@ export function CountriesClient({ userRole, salesPerson }: Props) {
 
         {/* Mobile cards */}
         <div className="md:hidden divide-y divide-gray-100">
-          {filtered.map((c) => (
+          {paginated.map((c) => (
             <div
               key={c.country}
               className="p-4 space-y-2 cursor-pointer active:bg-gray-50"
@@ -222,6 +232,30 @@ export function CountriesClient({ userRole, salesPerson }: Props) {
           ))}
         </div>
       </div>
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-1 py-2">
+          <p className="text-xs text-gray-500">
+            Page {safePage} / {totalPages} &nbsp;·&nbsp; {filtered.length} countries
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage === 1}
+              className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Previous
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage === totalPages}
+              className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
