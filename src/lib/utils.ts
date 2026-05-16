@@ -37,17 +37,21 @@ export function statusBg(status: PerformanceStatus): string {
 
 export function tierBg(tier: BuyerTier): string {
   switch (tier) {
-    case "TIER1": return "bg-amber-100 text-amber-800 border-amber-200"
-    case "TIER2": return "bg-blue-100 text-blue-800 border-blue-200"
-    case "TIER3": return "bg-gray-100 text-gray-600 border-gray-200"
+    case "TIER1":  return "bg-amber-100 text-amber-800 border-amber-200"
+    case "TIER2":  return "bg-blue-100 text-blue-800 border-blue-200"
+    case "TIER3":  return "bg-green-100 text-green-700 border-green-200"
+    case "OTHERS": return "bg-gray-100 text-gray-500 border-gray-200"
+    default:       return "bg-gray-100 text-gray-500 border-gray-200"
   }
 }
 
 export function tierLabel(tier: BuyerTier): string {
   switch (tier) {
-    case "TIER1": return "Tier 1 — Key Account"
-    case "TIER2": return "Tier 2 — Growth"
-    case "TIER3": return "Tier 3 — Fragmented"
+    case "TIER1":  return "Tier 1"
+    case "TIER2":  return "Tier 2"
+    case "TIER3":  return "Tier 3"
+    case "OTHERS": return "Others"
+    default:       return "Others"
   }
 }
 

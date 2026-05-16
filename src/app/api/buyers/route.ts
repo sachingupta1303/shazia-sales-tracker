@@ -315,16 +315,17 @@ export async function GET(req: Request) {
 
   const withTier: ResolvedBuyer[] = sorted.map((b) => {
     const sheetTier = tierByName.get(normName(b.canonicalBuyerName))
+    // Tier directly from sheet: T1→TIER1, T2→TIER2, T3→TIER3, Others/not in sheet→OTHERS
     const tier: BuyerTier =
-      sheetTier === "TIER1" ? "TIER1" :
-      sheetTier === "TIER2" ? "TIER2" : "TIER3"
+      sheetTier === "TIER1"  ? "TIER1"  :
+      sheetTier === "TIER2"  ? "TIER2"  :
+      sheetTier === "TIER3"  ? "TIER3"  : "OTHERS"
 
-    // Segment: sheet Tier1 → VIP, no canonical override → derive from sheet tier
+    // Segment: Tier1 → VIP, Others → EXISTING
     let segment = b.segment
     if (!b._hasCanonical) {
-      if (sheetTier === "TIER1")                    segment = "VIP"
-      else if (!sheetTier || sheetTier === "OTHERS") segment = "EXISTING"
-      // TIER2/TIER3 keep default segment from preTierList
+      if (sheetTier === "TIER1")                          segment = "VIP"
+      else if (!sheetTier || sheetTier === "OTHERS")      segment = "EXISTING"
     }
 
     const { _hasCanonical, ...rest } = b
@@ -354,9 +355,10 @@ export async function GET(req: Request) {
   }
 
   // ── 7. Summary stats (from all withTier, not just filtered) ──────────────
-  const t1 = withTier.filter((b) => b.tier === "TIER1")
-  const t2 = withTier.filter((b) => b.tier === "TIER2")
-  const t3 = withTier.filter((b) => b.tier === "TIER3")
+  const t1     = withTier.filter((b) => b.tier === "TIER1")
+  const t2     = withTier.filter((b) => b.tier === "TIER2")
+  const t3     = withTier.filter((b) => b.tier === "TIER3")
+  const others = withTier.filter((b) => b.tier === "OTHERS")
 
   const sumTier = (arr: ResolvedBuyer[]) => ({
     count:        arr.length,
@@ -391,6 +393,7 @@ export async function GET(req: Request) {
       tier1:          sumTier(t1),
       tier2:          sumTier(t2),
       tier3:          sumTier(t3),
+      others:         sumTier(others),
       bySegment:      segmentCounts,
       totalTarget,
       totalActual:    withTier.reduce((s, b) => s + b.actual, 0),

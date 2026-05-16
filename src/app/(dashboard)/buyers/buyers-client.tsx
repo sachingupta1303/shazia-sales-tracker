@@ -17,7 +17,7 @@ interface BuyersResponse {
   pagination: { page: number; limit: number; total: number; totalPages: number; hasNext: boolean; hasPrev: boolean }
   summary: {
     totalBuyers: number
-    tier1: TierSummary; tier2: TierSummary; tier3: TierSummary
+    tier1: TierSummary; tier2: TierSummary; tier3: TierSummary; others: TierSummary
     bySegment: Record<string, number>
     totalTarget: number; totalActual: number
   }
@@ -42,7 +42,7 @@ function segmentShortLabel(s: BuyerSegment): string {
   }
 }
 function tierShort(t: BuyerTier): string {
-  return t === "TIER1" ? "T1" : t === "TIER2" ? "T2" : "T3"
+  return t === "TIER1" ? "T1" : t === "TIER2" ? "T2" : t === "TIER3" ? "T3" : "Others"
 }
 
 // ── Filter pill configs ──────────────────────────────────────────────────────
@@ -52,10 +52,11 @@ const SEGMENTS: { value: BuyerSegment | "ALL"; label: string; color: string }[] 
 ]
 
 const TIERS: { value: BuyerTier | "ALL"; label: string }[] = [
-  { value: "ALL",   label: "All Tiers" },
-  { value: "TIER1", label: "Tier 1 (80%)" },
-  { value: "TIER2", label: "Tier 2 (95%)" },
-  { value: "TIER3", label: "Tier 3 (Rest)" },
+  { value: "ALL",    label: "All Tiers" },
+  { value: "TIER1",  label: "Tier 1" },
+  { value: "TIER2",  label: "Tier 2" },
+  { value: "TIER3",  label: "Tier 3" },
+  { value: "OTHERS", label: "Others" },
 ]
 
 // ── Health Score pill ─────────────────────────────────────────────────────────
@@ -439,11 +440,12 @@ export function BuyersClient({ userRole, salesPerson }: Props) {
 
       {/* Tier summary cards */}
       {data && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Tier 1 · Top 80%", data: data.summary.tier1, color: "bg-amber-50 border-amber-200" },
-            { label: "Tier 2 · 80–95%",  data: data.summary.tier2, color: "bg-blue-50 border-blue-200" },
-            { label: "Tier 3 · Rest",    data: data.summary.tier3, color: "bg-gray-50 border-gray-200" },
+            { label: "Tier 1",  data: data.summary.tier1,  color: "bg-amber-50 border-amber-200" },
+            { label: "Tier 2",  data: data.summary.tier2,  color: "bg-blue-50 border-blue-200"   },
+            { label: "Tier 3",  data: data.summary.tier3,  color: "bg-green-50 border-green-200" },
+            { label: "Others",  data: data.summary.others, color: "bg-gray-50 border-gray-200"   },
           ].map((t) => (
             <div key={t.label} className={`rounded-lg border px-3 py-2.5 ${t.color}`}>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t.label}</p>
@@ -582,6 +584,7 @@ export function BuyersClient({ userRole, salesPerson }: Props) {
                               <span className={`text-[9px] font-bold ${
                                 b.tier === "TIER1" ? "text-amber-700" :
                                 b.tier === "TIER2" ? "text-blue-700"  :
+                                b.tier === "TIER3" ? "text-green-700" :
                                                      "text-gray-500"
                               }`}>
                                 {tierShort(b.tier)}
@@ -667,6 +670,7 @@ export function BuyersClient({ userRole, salesPerson }: Props) {
                           <span className={`text-[9px] font-bold ${
                             b.tier === "TIER1" ? "text-amber-700" :
                             b.tier === "TIER2" ? "text-blue-700"  :
+                            b.tier === "TIER3" ? "text-green-700" :
                                                  "text-gray-500"
                           }`}>
                             {tierShort(b.tier)}

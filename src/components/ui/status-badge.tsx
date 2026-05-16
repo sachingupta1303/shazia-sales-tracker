@@ -20,9 +20,10 @@ export function StatusBadge({ status }: { status: PerformanceStatus }) {
 
 export function TierBadge({ tier }: { tier: BuyerTier }) {
   const short: Record<BuyerTier, string> = {
-    TIER1: "T1 — Key",
-    TIER2: "T2 — Growth",
-    TIER3: "T3",
+    TIER1:  "T1 — Key",
+    TIER2:  "T2 — Growth",
+    TIER3:  "T3",
+    OTHERS: "Others",
   }
   return (
     <span className={cn(

@@ -17,7 +17,7 @@ export type PerformanceStatus =
   | "NO_TARGET"
   | "ON_TRACK"
 
-export type BuyerTier = "TIER1" | "TIER2" | "TIER3"
+export type BuyerTier = "TIER1" | "TIER2" | "TIER3" | "OTHERS"
 
 export type BuyerSegment =
   | "VIP"             // Top 20 by target containers — Shazia's most valuable accounts

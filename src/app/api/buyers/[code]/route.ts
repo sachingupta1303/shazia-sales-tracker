@@ -129,11 +129,12 @@ export async function GET(
     ? Math.floor((Date.now() - new Date(lastOrderDate).getTime()) / (86_400_000 * 7))
     : 99
 
-  // Tier from "80/20 Buyers" sheet — Tier1→TIER1+VIP, Tier2→TIER2, Tier3→TIER3, not in sheet→TIER3
+  // Tier from "80/20 Buyers" sheet — T1→TIER1, T2→TIER2, T3→TIER3, Others/not in sheet→OTHERS
   const sheetBuyer = buyers8020.find((b) => b.buyerName.toLowerCase().trim() === displayName.toLowerCase().trim())
   const tier: BuyerTier =
     sheetBuyer?.tier === "TIER1" ? "TIER1" :
-    sheetBuyer?.tier === "TIER2" ? "TIER2" : "TIER3"
+    sheetBuyer?.tier === "TIER2" ? "TIER2" :
+    sheetBuyer?.tier === "TIER3" ? "TIER3" : "OTHERS"
 
   // Weekly bars for chart (last 12 FY weeks or all data)
   const startWeek = Math.max(1, currentWeek - 11)
