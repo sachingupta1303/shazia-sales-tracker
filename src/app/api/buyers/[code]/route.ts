@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   getCanonicalBuyers, getBuyerAliasMap,
-  filterPIByFY, getMeetingComplianceForBuyer,
+  filterPIByFY, getMeetingComplianceForBuyer, get8020Buyers,
 } from "@/lib/data"
 import { calcHealthScore } from "@/lib/health-score"
 import {
@@ -36,12 +36,13 @@ export async function GET(
   const previousFY  = getPreviousFY(currentFY)
   const currentWeek = getCurrentFYWeek()
 
-  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap] = await Promise.all([
+  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap, buyers8020] = await Promise.all([
     getPIRecords(),
     getTargetRecords(),
     getBuyerMaster(),
     getCanonicalBuyers(),
     getBuyerAliasMap(),
+    get8020Buyers(),
   ])
 
   const currentPI  = filterPIByFY(allPI, currentFY)
@@ -128,14 +129,11 @@ export async function GET(
     ? Math.floor((Date.now() - new Date(lastOrderDate).getTime()) / (86_400_000 * 7))
     : 99
 
-  // 80/20 tier — approximate from target relative to active FY targets
-  const totalTargetAll = targets
-    .filter((t) => t.financialYear === activeFY)
-    .reduce((s, t) => s + t.currentYearTargetContainers, 0)
+  // Tier from "80/20 Buyers" sheet — Tier1→TIER1+VIP, Tier2→TIER2, Tier3→TIER3, not in sheet→TIER3
+  const sheetBuyer = buyers8020.find((b) => b.buyerName.toLowerCase().trim() === displayName.toLowerCase().trim())
   const tier: BuyerTier =
-    totalTargetAll > 0 && target / totalTargetAll >= 0.05
-      ? "TIER1"
-      : target / totalTargetAll >= 0.01 ? "TIER2" : "TIER3"
+    sheetBuyer?.tier === "TIER1" ? "TIER1" :
+    sheetBuyer?.tier === "TIER2" ? "TIER2" : "TIER3"
 
   // Weekly bars for chart (last 12 FY weeks or all data)
   const startWeek = Math.max(1, currentWeek - 11)

@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   getCanonicalBuyers, getBuyerAliasMap,
-  filterPIByFY,
+  filterPIByFY, get8020Buyers,
 } from "@/lib/data"
 import { calcHealthScore } from "@/lib/health-score"
 import {
@@ -47,14 +47,21 @@ export async function GET(req: Request) {
   const currentWeek = getCurrentFYWeek()
 
   // ── 1. Fetch all data in parallel ────────────────────────────────────────
-  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap, strategies] = await Promise.all([
+  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap, strategies, buyers8020] = await Promise.all([
     getPIRecords(),
     getTargetRecords(),
     getBuyerMaster(),
     getCanonicalBuyers(),
     getBuyerAliasMap(),
     import("@/lib/data").then(m => m.getCountryStrategies()),
+    get8020Buyers(),
   ])
+
+  // Tier map from "80/20 Buyers" sheet — name (normalised) → tier
+  const tierByName = new Map<string, string>()
+  for (const b of buyers8020) {
+    tierByName.set(normName(b.buyerName), b.tier)
+  }
 
   const currentPI  = filterPIByFY(allPI, currentFY)
   const previousPI = filterPIByFY(allPI, previousFY)
@@ -298,26 +305,28 @@ export async function GET(req: Request) {
     })
   }
 
-  // ── 5. 80/20 Tier classification + segment auto-classification ───────
-  // Sort all buyers by target (descending) to compute rank.
+  // ── 5. Tier classification from "80/20 Buyers" sheet ──────────────────
+  // Tier 1 (T1) → TIER1 + segment VIP
+  // Tier 2 (T2) → TIER2
+  // Tier 3 (T3) → TIER3
+  // Not in sheet  → TIER3, segment EXISTING (Others)
   const sorted = [...preTierList].sort((a, b) => b.target - a.target || b.actual - a.actual)
   const totalTarget = sorted.reduce((s, b) => s + b.target, 0)
-  let cumulative = 0
 
-  const withTier: ResolvedBuyer[] = sorted.map((b, rankIdx) => {
-    cumulative += b.target
-    const pct  = totalTarget > 0 ? cumulative / totalTarget : 1
-    const tier: BuyerTier = pct <= 0.80 ? "TIER1" : pct <= 0.95 ? "TIER2" : "TIER3"
+  const withTier: ResolvedBuyer[] = sorted.map((b) => {
+    const sheetTier = tierByName.get(normName(b.canonicalBuyerName))
+    const tier: BuyerTier =
+      sheetTier === "TIER1" ? "TIER1" :
+      sheetTier === "TIER2" ? "TIER2" : "TIER3"
 
-    // Auto-segment: if no canonical record exists, classify by target rank.
-    // Manager-set segments (canonical record present) always take precedence.
+    // Segment: sheet Tier1 → VIP, no canonical override → derive from sheet tier
     let segment = b.segment
-    if (!b._hasCanonical && b.target > 0) {
-      if (rankIdx < 20)      segment = "VIP"
-      else if (rankIdx < 50) segment = "STRATEGIC"
+    if (!b._hasCanonical) {
+      if (sheetTier === "TIER1")                    segment = "VIP"
+      else if (!sheetTier || sheetTier === "OTHERS") segment = "EXISTING"
+      // TIER2/TIER3 keep default segment from preTierList
     }
 
-    // Strip the internal flag before returning
     const { _hasCanonical, ...rest } = b
     return { ...rest, tier, segment }
   })
