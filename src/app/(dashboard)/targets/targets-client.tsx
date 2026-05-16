@@ -399,13 +399,26 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
     (r) => !tierFilter || r.tier === tierFilter
   )
 
-  const summary = tab === "buyer" && buyerData?.summary
+  // Summary cards always reflect the tier-filtered rows (client-side)
+  const filteredSummary = tab === "buyer" && buyerData
+    ? {
+        totalTarget: sumField(filteredBuyerRows, "target"),
+        totalActual: sumField(filteredBuyerRows, "actual"),
+        achieved:    filteredBuyerRows.filter((r) => r.status === "ACHIEVED").length,
+        missed:      filteredBuyerRows.filter((r) => r.status === "MISSED").length,
+        buyerCount:  filteredBuyerRows.length,
+      }
+    : null
+
+  const tierLabel = tierFilter === "TIER1" ? "Tier 1" : tierFilter === "TIER2" ? "Tier 2" : tierFilter === "TIER3" ? "Tier 3" : tierFilter === "OTHERS" ? "Others" : "All"
+
+  const summary = filteredSummary
     ? [
-        { label: "Total Target",  value: formatNumber(buyerData.summary.totalTarget, 0), color: "bg-purple-50 border-purple-200" },
-        { label: "Total Actual",  value: formatNumber(buyerData.summary.totalActual),    color: "bg-green-50 border-green-200"  },
-        { label: "Achieved",      value: buyerData.summary.achieved,                     color: "bg-green-50 border-green-200"  },
-        { label: "Missed",        value: buyerData.summary.missed,                       color: "bg-red-50 border-red-200"      },
-        { label: "Tier 1 Buyers", value: buyerData.summary.tier1Count,                   color: "bg-amber-50 border-amber-200"  },
+        { label: "Total Target",               value: formatNumber(filteredSummary.totalTarget, 0), color: "bg-purple-50 border-purple-200" },
+        { label: "Total Actual",               value: formatNumber(filteredSummary.totalActual),    color: "bg-green-50 border-green-200"  },
+        { label: "Achieved",                   value: filteredSummary.achieved,                     color: "bg-green-50 border-green-200"  },
+        { label: "Missed",                     value: filteredSummary.missed,                       color: "bg-red-50 border-red-200"      },
+        { label: `${tierLabel} Buyers`,        value: filteredSummary.buyerCount,                   color: "bg-amber-50 border-amber-200"  },
       ]
     : null
 

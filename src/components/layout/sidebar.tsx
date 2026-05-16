@@ -32,7 +32,7 @@ const NAV_ITEMS = [
     roles: ["SALES_PERSON", "MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
   },
   {
-    label: "80/20 Dashboard",
+    label: "80/20 Meeting Dashboard",
     href: "/8020",
     icon: "⭐",
     roles: ["SALES_PERSON", "MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
