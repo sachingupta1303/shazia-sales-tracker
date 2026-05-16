@@ -26,7 +26,7 @@ export async function PATCH(
     }
   }
 
-  const ok = await updateTravelPlan(id, body, user.name)
+  const ok = await updateTravelPlan(id, body, user.name ?? user.email ?? "unknown")
   if (!ok) return NextResponse.json({ error: "plan not found" }, { status: 404 })
 
   return NextResponse.json({ ok: true, id })

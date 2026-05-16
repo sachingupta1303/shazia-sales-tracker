@@ -118,7 +118,7 @@ export async function POST(req: Request) {
     buyerName:     body.buyerName,
     financialYear: body.financialYear ?? getCurrentFY(),
     newTarget:     body.newTarget,
-    changedBy:     user.name,
+    changedBy:     user.name ?? user.email ?? "unknown",
     reason:        body.reason ?? "",
   })
 

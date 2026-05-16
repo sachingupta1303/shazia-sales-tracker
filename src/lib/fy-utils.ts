@@ -152,8 +152,8 @@ export function parsePIDate(dateStr: string): Date {
         // c = year, so format is either DD/MM/YYYY or MM/DD/YYYY
         // If a > 12, definitely DD/MM/YYYY
         if (a > 12) return new Date(c, b - 1, a)  // DD/MM/YYYY
-        // Ambiguous — assume MM/DD/YYYY (US) since that's what parsePIDate originally assumed
-        return new Date(c, a - 1, b)
+        // Ambiguous — default to DD/MM/YYYY (Indian date format)
+        return new Date(c, b - 1, a)
       }
       // a = year (YYYY format first two parts would be larger)
       return new Date(a, b - 1, c)

@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     dueDate,
     status:        "OPEN",
     recurringDays: body.recurringDays ?? 0,
-    createdBy:     user.name,
+    createdBy:     user.name ?? user.email ?? "unknown",
     createdAt:     new Date().toISOString(),
   }
 

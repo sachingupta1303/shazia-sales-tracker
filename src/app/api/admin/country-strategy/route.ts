@@ -48,7 +48,7 @@ export async function PATCH(req: Request) {
     isDreamMarket:   body.isDreamMarket,
     priority:        body.priority,
     strategicNotes:  body.strategicNotes,
-    updatedBy:       user.name,
+    updatedBy:       user.name ?? user.email ?? "unknown",
   })
   if (!ok) return NextResponse.json({ error: "Update failed" }, { status: 500 })
 

@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     blockers:         body.blockers ?? "",
     wins:             body.wins ?? "",
     nextWeekFocus:    body.nextWeekFocus ?? "",
-    recordedBy:       user.name,
+    recordedBy:       user.name ?? user.email ?? "unknown",
     recordedAt:       new Date().toISOString(),
   }
 

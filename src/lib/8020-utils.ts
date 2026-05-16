@@ -69,10 +69,21 @@ export const OUTCOME_EMOJI: Record<string, string> = {
   OTHER:           "📝",
 }
 
-// Days remaining until a date (negative means overdue)
+// Days remaining until a date (negative means overdue).
+// Uses IST midnight (UTC+05:30) as "today" so the count is correct for users in India.
 export function daysUntil(d: Date | string): number {
   const target = typeof d === "string" ? new Date(d) : d
-  return Math.ceil((target.getTime() - Date.now()) / 86_400_000)
+  // IST offset = +05:30 = 330 minutes
+  const IST_OFFSET_MS = 330 * 60 * 1000
+  const nowUtcMs  = Date.now()
+  const todayIST  = new Date(nowUtcMs + IST_OFFSET_MS)
+  // Truncate to IST midnight
+  const todayMidnightIST = Date.UTC(
+    todayIST.getUTCFullYear(), todayIST.getUTCMonth(), todayIST.getUTCDate()
+  ) - IST_OFFSET_MS
+  const targetMidnight = new Date(target)
+  targetMidnight.setHours(0, 0, 0, 0)
+  return Math.ceil((targetMidnight.getTime() - todayMidnightIST) / 86_400_000)
 }
 
 // Advance a date by N days, skip Sunday → Monday

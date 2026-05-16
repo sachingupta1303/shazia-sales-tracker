@@ -23,7 +23,7 @@ export async function PATCH(
     return NextResponse.json({ error: "invalid status" }, { status: 400 })
   }
 
-  const result = await updateTaskStatus(id, body.status, user.name)
+  const result = await updateTaskStatus(id, body.status, user.name ?? user.email ?? "unknown")
   if (!result.ok) return NextResponse.json({ error: "task not found" }, { status: 404 })
 
   return NextResponse.json({ ok: true, id, status: body.status })

@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     expectedOutcome: body.expectedOutcome ?? "",
     status:          (body.status ?? "PLANNED") as TravelStatus,
     remarks:         body.remarks ?? "",
-    createdBy:       user.name,
+    createdBy:       user.name ?? user.email ?? "unknown",
     createdAt:       new Date().toISOString(),
   }
 

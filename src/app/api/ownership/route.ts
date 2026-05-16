@@ -72,7 +72,7 @@ export async function POST(req: Request) {
     fromOwner:          body.fromOwner,
     toOwner:            body.toOwner,
     effectiveDate:      body.effectiveDate ?? new Date().toISOString().split("T")[0],
-    transferredBy:      user.name,
+    transferredBy:      user.name ?? user.email ?? "unknown",
     reason:             body.reason ?? "",
     historicalActual,
     inheritedTarget,

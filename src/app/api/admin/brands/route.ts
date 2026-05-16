@@ -94,7 +94,7 @@ export async function PATCH(req: Request) {
     brand:     body.brand,
     category:  body.category,
     notes:     body.notes,
-    updatedBy: user.name,
+    updatedBy: user.name ?? user.email ?? "unknown",
   })
   if (!ok) return NextResponse.json({ error: "Update failed" }, { status: 500 })
 

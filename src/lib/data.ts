@@ -1390,48 +1390,8 @@ export async function deleteTask(id: string): Promise<boolean> {
     SHEETS.SALES_TRACKING, SHEET_NAMES.BUYER_TASKS, "ID", id
   )
   if (rowIdx === -1) return false
-
-  // Google Sheets API doesn't have a simple "delete row" by index in the values collection
-  // We usually clear the row or use batchUpdate to remove it.
-  // For simplicity and since our findRowIndexByKey returns the index, 
-  // we'll use batchUpdate to remove the row.
-  const { google } = await import("googleapis")
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  })
-  const sheets = google.sheets({ version: "v4", auth })
-  const spreadsheetId = process.env.SALES_TRACKING_SHEET_ID!
-  
-  // Find the sheetId for SHEET_NAMES.BUYER_TASKS
-  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId })
-  const sheet = spreadsheet.data.sheets?.find(
-    (s) => s.properties?.title === SHEET_NAMES.BUYER_TASKS
-  )
-  const sheetId = sheet?.properties?.sheetId
-
-  if (sheetId == null) return false
-
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId,
-              dimension: "ROWS",
-              startIndex: rowIdx - 1,
-              endIndex: rowIdx,
-            },
-          },
-        },
-      ],
-    },
-  })
+  await deleteSheetRow(SHEETS.SALES_TRACKING, SHEET_NAMES.BUYER_TASKS, rowIdx)
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.BUYER_TASKS)
   return true
 }
 
@@ -1505,6 +1465,11 @@ export async function getCredentials(): Promise<(import("@/types").AppUser & { p
 
 export function filterPIByFY(records: PIRecord[], fy: FinancialYear): PIRecord[] {
   return records.filter((r) => {
+    // Prefer explicit financialYear column (e.g. "2025-26") when present
+    if (r.financialYear && r.financialYear.trim()) {
+      return r.financialYear.trim() === fy
+    }
+    // Fall back to parsing piDate
     const date = parsePIDate(r.piDate)
     return isInFY(date, fy)
   })
@@ -2298,7 +2263,9 @@ function generateToken(): string {
  * Same meetingId always produces the same token — no sheet needed.
  */
 function computeHmacToken(meetingId: string): string {
-  const secret = process.env.NEXTAUTH_SECRET ?? process.env.MEETING_TOKEN_SECRET ?? "shazia-rice-token-secret-2024"
+  // NextAuth v5 uses AUTH_SECRET; fall back to NEXTAUTH_SECRET for v4 deployments
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? process.env.MEETING_TOKEN_SECRET
+  if (!secret) throw new Error("No token secret configured (set AUTH_SECRET env var)")
   return createHmac("sha256", secret).update(meetingId).digest("hex")
 }
 
@@ -2371,7 +2338,7 @@ export async function regenAllDoneTokens(): Promise<Map<string, string>> {
   const createdAt = new Date().toISOString()
 
   for (const m of meetings) {
-    const token = generateToken()
+    const token = computeHmacToken(m.id)
     rows.push([token, m.id, m.buyerName, "", "false", createdAt])
     result.set(m.id, token)
   }
