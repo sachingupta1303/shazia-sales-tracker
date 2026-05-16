@@ -130,7 +130,6 @@ const FY_MONTHS = [
 ]
 
 // Computed once at module load — covers current FY + last 2 years
-// Default = previous FY because the current FY just started (April) and has no data yet
 function buildFYOptions(): string[] {
   const today = new Date()
   const currentYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1
@@ -140,8 +139,8 @@ function buildFYOptions(): string[] {
   })
 }
 const FY_OPTIONS = buildFYOptions()
-// Default to previous FY (index 1) — current FY just started in April and has no data yet
-const DEFAULT_FY = FY_OPTIONS[1]
+// Default to current FY — targets always tagged with getCurrentFY()
+const DEFAULT_FY = FY_OPTIONS[0]
 
 // ── Filter Bar ──────────────────────────────────────────────────────────────
 
@@ -173,6 +172,16 @@ function FilterBar({
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filters</span>
+
+      {/* Financial Year */}
+      <select value={filters.fy} onChange={(e) => set("fy", e.target.value)}
+              className="text-sm border border-green-300 rounded-lg px-2 py-1.5 bg-green-50 text-green-800 font-semibold">
+        {FY_OPTIONS.map((fy) => (
+          <option key={fy} value={fy}>{fy}</option>
+        ))}
+      </select>
+
+      <div className="w-px bg-gray-200 self-stretch" />
 
       {/* Period (mutually exclusive) */}
       <select value={filters.fyMonth} onChange={(e) => set("fyMonth", e.target.value)}
