@@ -3,13 +3,13 @@ import { auth } from "@/lib/auth"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   getCanonicalBuyers, getBuyerAliasMap,
-  filterPIByFY,
+  filterPIByFY, get8020Buyers,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
   targetDueTillWeek, getStatus,
 } from "@/lib/fy-utils"
-import type { AppUser, BuyerSegment, PerformanceStatus } from "@/types"
+import type { AppUser, BuyerSegment, BuyerTier, PerformanceStatus } from "@/types"
 
 function normName(s: string) { return s.toLowerCase().trim() }
 
@@ -27,13 +27,24 @@ export async function GET(
   const previousFY  = getPreviousFY(currentFY)
   const currentWeek = getCurrentFYWeek()
 
-  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap] = await Promise.all([
+  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap, buyers8020] = await Promise.all([
     getPIRecords(),
     getTargetRecords(),
     getBuyerMaster(),
     getCanonicalBuyers(),
     getBuyerAliasMap(),
+    get8020Buyers(),
   ])
+
+  // Tier lookup from 80/20 sheet
+  const tierByName = new Map<string, BuyerTier>()
+  for (const b of buyers8020) {
+    const t: BuyerTier =
+      b.tier === "TIER1" ? "TIER1" :
+      b.tier === "TIER2" ? "TIER2" :
+      b.tier === "TIER3" ? "TIER3" : "OTHERS"
+    tierByName.set(b.buyerName.toLowerCase().trim(), t)
+  }
 
   // Resolve canonical identities for all PI records to correctly identify segments
   const canonicalByCode = new Map(canonicalBuyers.map((c) => [c.canonicalBuyerCode, c]))
@@ -118,17 +129,23 @@ export async function GET(
 
   const buyers = Array.from(buyerMap.values()).map(b => ({
     ...b,
+    tier: tierByName.get(b.name.toLowerCase().trim()) ?? ("OTHERS" as BuyerTier),
     achievementPct: b.target > 0 ? Math.round((b.actual / b.target) * 100) : 0,
     status: getStatus(b.target, b.actual, targetDueTillWeek(b.target, currentWeek)) as PerformanceStatus
   })).sort((a, b) => b.target - a.target || b.actual - a.actual)
 
-  // Portfolio Summary
+  // Portfolio Summary — tier counts from 80/20 sheet
   const summary = {
-    totalBuyers: buyers.length,
-    vipCount: buyers.filter(b => b.segment === "VIP").length,
-    strategicCount: buyers.filter(b => b.segment === "STRATEGIC").length,
-    nbdCount: buyers.filter(b => b.actual > 0 && buyers.find(prev => prev.name === b.name && prev.actual === 0)).length || 0, // Placeholder
-    otherCount: buyers.filter(b => b.segment !== "VIP" && b.segment !== "STRATEGIC").length
+    totalBuyers:   buyers.length,
+    tier1Count:    buyers.filter(b => b.tier === "TIER1").length,
+    tier2Count:    buyers.filter(b => b.tier === "TIER2").length,
+    tier3Count:    buyers.filter(b => b.tier === "TIER3").length,
+    othersCount:   buyers.filter(b => b.tier === "OTHERS").length,
+    // legacy fields kept for backward compat
+    vipCount:      buyers.filter(b => b.segment === "VIP").length,
+    strategicCount:buyers.filter(b => b.segment === "STRATEGIC").length,
+    nbdCount:      0,
+    otherCount:    buyers.filter(b => b.segment !== "VIP" && b.segment !== "STRATEGIC").length,
   }
 
   // Country breakdown
