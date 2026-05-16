@@ -347,7 +347,8 @@ function MobilePerformanceCard({
 // ── Main Component ─────────────────────────────────────────────────────────────
 export function TargetsClient({ userRole, salesPerson }: Props) {
   const [tab,      setTab]     = useState<Tab>("country")
-  const [filters,  setFilters] = useState<FilterState>({})
+  const [filters,    setFilters]    = useState<FilterState>({})
+  const [tierFilter, setTierFilter] = useState<string>("")
   const [loading,  setLoading] = useState(true)
   const [error,    setError]   = useState("")
   const [options,  setOptions] = useState<{ countries: string[]; salesPersons: string[] }>({ countries: [], salesPersons: [] })
@@ -393,6 +394,11 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
 
   const week = countryData?.meta?.week ?? buyerData?.meta?.week ?? spData?.meta?.week ?? 6
 
+  // Client-side tier filter — applied after data loads
+  const filteredBuyerRows = (buyerData?.rows ?? []).filter(
+    (r) => !tierFilter || r.tier === tierFilter
+  )
+
   const summary = tab === "buyer" && buyerData?.summary
     ? [
         { label: "Total Target",  value: formatNumber(buyerData.summary.totalTarget, 0), color: "bg-purple-50 border-purple-200" },
@@ -436,9 +442,9 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
           ] as const).map(({ val, label }) => (
             <button
               key={val || "all"}
-              onClick={() => setFilters((f) => ({ ...f, tier: val || undefined } as typeof f))}
+              onClick={() => setTierFilter(val)}
               className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
-                (filters as { tier?: string }).tier === val || (!val && !(filters as { tier?: string }).tier)
+                tierFilter === val
                   ? "bg-gray-800 text-white border-gray-800"
                   : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
               }`}
@@ -464,7 +470,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
           <span className="text-sm font-semibold text-gray-700">
             {loading ? "Loading…" : (
               tab === "country" ? `${countryData?.rows.length ?? 0} countries` :
-              tab === "buyer"   ? `${buyerData?.rows.length  ?? 0} buyers`    :
+              tab === "buyer"   ? `${filteredBuyerRows.length} buyers`    :
                                   `${spData?.rows.length     ?? 0} sales persons`
             )}
           </span>
@@ -475,7 +481,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         {!loading && (
           <>
             {tab === "country"    && countryData && <div className="hidden md:block"><CountryTable rows={countryData.rows} week={week} /></div>}
-            {tab === "buyer"      && buyerData   && <div className="hidden md:block"><BuyerTable   rows={buyerData.rows}   week={week} showSP={!isSP} /></div>}
+            {tab === "buyer"      && buyerData   && <div className="hidden md:block"><BuyerTable   rows={filteredBuyerRows} week={week} showSP={!isSP} /></div>}
             {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spData.rows}      week={week} /></div>}
           </>
         )}
@@ -489,7 +495,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
                 target={r.target} actual={r.actual} gap={r.gap}
                 pct={r.achievementPercent} status={r.status} />
             ))}
-            {tab === "buyer" && buyerData?.rows.map((r, i) => (
+            {tab === "buyer" && filteredBuyerRows.map((r, i) => (
               <MobilePerformanceCard key={i} title={r.buyerName}
                 sub={`${r.country} · ${r.salesPerson}`}
                 target={r.target} actual={r.actual} gap={r.gap}
