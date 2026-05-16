@@ -9,12 +9,7 @@ import { APP_BASE_URL } from "@/lib/mailer"
 
 export const dynamic = "force-dynamic"
 
-export async function GET(req: Request) {
-  const secret = process.env.CRON_SECRET ?? ""
-  const auth   = req.headers.get("authorization") ?? ""
-  if (secret && auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+export async function GET() {
   const meetings = await getMeetingSchedules()
 
   const eligible = meetings.filter(
