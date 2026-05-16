@@ -129,7 +129,12 @@ const FY_MONTHS = [
   "October","November","December","January","February","March",
 ]
 
-// Computed once at module load — covers current FY + last 2 years
+// Always compute from runtime Date so it never freezes to a stale build-time value
+function getCurrentFYString(): string {
+  const today = new Date()
+  const y = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1
+  return `${y}-${String(y + 1).slice(-2)}`
+}
 function buildFYOptions(): string[] {
   const today = new Date()
   const currentYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1
@@ -139,8 +144,8 @@ function buildFYOptions(): string[] {
   })
 }
 const FY_OPTIONS = buildFYOptions()
-// Default to current FY — targets always tagged with getCurrentFY()
-const DEFAULT_FY = FY_OPTIONS[0]
+// Always current FY — targets in 80/20 sheet are always tagged getCurrentFY()
+const DEFAULT_FY = getCurrentFYString()
 
 // ── Filter Bar ──────────────────────────────────────────────────────────────
 

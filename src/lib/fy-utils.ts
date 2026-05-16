@@ -117,13 +117,51 @@ export function getCycleScore(
 
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 
+const MONTH_MAP: Record<string, number> = {
+  jan:0,feb:1,mar:2,apr:3,may:4,jun:5,
+  jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+}
+
 export function parsePIDate(dateStr: string): Date {
-  // Handles MM/DD/YYYY and YYYY-MM-DD
-  if (dateStr.includes("/")) {
-    const [m, d, y] = dateStr.split("/")
-    return new Date(Number(y), Number(m) - 1, Number(d))
+  if (!dateStr || !dateStr.trim()) return new Date(NaN)
+  const s = dateStr.trim()
+
+  // "15 May 2026" or "May 15 2026" — most common from Google Sheets
+  const wordsMatch = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/)
+  if (wordsMatch) {
+    const [, d, mon, y] = wordsMatch
+    const m = MONTH_MAP[mon.slice(0, 3).toLowerCase()]
+    if (m !== undefined) return new Date(Number(y), m, Number(d))
   }
-  return new Date(dateStr)
+  const wordsMatch2 = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2})\s+(\d{4})$/)
+  if (wordsMatch2) {
+    const [, mon, d, y] = wordsMatch2
+    const m = MONTH_MAP[mon.slice(0, 3).toLowerCase()]
+    if (m !== undefined) return new Date(Number(y), m, Number(d))
+  }
+
+  // YYYY-MM-DD (ISO)
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s)
+
+  // Slash-separated: detect DD/MM/YYYY vs MM/DD/YYYY by day > 12
+  if (s.includes("/")) {
+    const parts = s.split("/")
+    if (parts.length === 3) {
+      const [a, b, c] = parts.map(Number)
+      if (c > 31) {
+        // c = year, so format is either DD/MM/YYYY or MM/DD/YYYY
+        // If a > 12, definitely DD/MM/YYYY
+        if (a > 12) return new Date(c, b - 1, a)  // DD/MM/YYYY
+        // Ambiguous — assume MM/DD/YYYY (US) since that's what parsePIDate originally assumed
+        return new Date(c, a - 1, b)
+      }
+      // a = year (YYYY format first two parts would be larger)
+      return new Date(a, b - 1, c)
+    }
+  }
+
+  // Fallback to native parser
+  return new Date(s)
 }
 
 export function isInFY(date: Date, fy: FinancialYear): boolean {

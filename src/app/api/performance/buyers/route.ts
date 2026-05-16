@@ -107,7 +107,8 @@ export async function GET(req: Request) {
     const currentPI  = filterPI(filterPIByFY(allPI, fy))
     const previousPI = filterPI(filterPIByFY(allPI, prevFY))
 
-    const groupKey = (r: PIRecord) => (r.buyerCode || r.buyerCompanyName)
+    // Always normalize keys to UPPERCASE so buyer-name matching is case-insensitive
+    const groupKey = (r: PIRecord) => (r.buyerCode || r.buyerCompanyName).toUpperCase()
     const byBuyerCurrent: Record<string, PIRecord[]>  = {}
     const byBuyerPrevious: Record<string, PIRecord[]> = {}
     for (const r of currentPI)  (byBuyerCurrent[groupKey(r)]  ||= []).push(r)
