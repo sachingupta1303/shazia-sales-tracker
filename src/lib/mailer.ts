@@ -29,7 +29,12 @@ function getSmtpConfig() {
 
 export const MAIL_FROM     = process.env.SMTP_FROM     ?? "Shazia Rice <alerts@shaziarice.com>"
 export const MAIL_REPLY_TO = process.env.SMTP_REPLY_TO ?? ""
-export const APP_BASE_URL  = process.env.APP_BASE_URL  ?? "http://localhost:3000"
+// APP_BASE_URL → NEXTAUTH_URL (already set on Vercel) → localhost fallback for local dev
+export const APP_BASE_URL  = (
+  process.env.APP_BASE_URL   ||
+  process.env.NEXTAUTH_URL   ||
+  "http://localhost:3000"
+).replace(/\/$/, "")  // strip trailing slash
 
 function isConfigured(): boolean {
   const { host, user, pass } = getSmtpConfig()
