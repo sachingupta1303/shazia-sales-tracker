@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster, getCanonicalBuyers,
-  filterPIByFY, getBuyerAliasMap,
+  filterPIByFY, getBuyerAliasMap, get8020Buyers,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -55,13 +55,24 @@ export async function GET(req: Request) {
         ? user.salesPersonName
         : spFilter
 
-    const [allPI, targets, buyerMaster, canonical, aliasMap] = await Promise.all([
+    const [allPI, targets, buyerMaster, canonical, aliasMap, buyers8020] = await Promise.all([
       getPIRecords(),
       getTargetRecords(fy),
       getBuyerMaster(),
       getCanonicalBuyers(),
       getBuyerAliasMap(),
+      get8020Buyers(),
     ])
+
+    // Tier map from "80/20 Buyers" sheet — name → tier
+    const tierByName = new Map<string, BuyerTier>()
+    for (const b of buyers8020) {
+      const t: BuyerTier =
+        b.tier === "TIER1" ? "TIER1" :
+        b.tier === "TIER2" ? "TIER2" :
+        b.tier === "TIER3" ? "TIER3" : "OTHERS"
+      tierByName.set(b.buyerName.toLowerCase().trim(), t)
+    }
 
     const canonByCode = new Map(canonical.map((c) => [c.canonicalBuyerCode, c]))
 
@@ -111,15 +122,6 @@ export async function GET(req: Request) {
     const sorted = [...filteredTargets].sort((a, b) =>
       b.currentYearTargetContainers - a.currentYearTargetContainers
     )
-    const totalT = sorted.reduce((s, t) => s + t.currentYearTargetContainers, 0)
-    let cumulative = 0
-    const tierMap = new Map<string, BuyerTier>()
-    sorted.forEach((t) => {
-      cumulative += t.currentYearTargetContainers
-      const pct = totalT > 0 ? cumulative / totalT : 1
-      const tier: BuyerTier = pct <= 0.8 ? "TIER1" : pct <= 0.95 ? "TIER2" : "TIER3"
-      tierMap.set(t.buyerCompanyName.toUpperCase(), tier)
-    })
 
     const rows: BuyerPerformanceRow[] = filteredTargets.map((t) => {
       const key      = t.buyerCompanyName.toUpperCase()
@@ -164,7 +166,7 @@ export async function GET(req: Request) {
         buyerName:               t.buyerCompanyName,
         country:                 t.countries,
         salesPerson:             t.salesPerson,
-        tier:                    (buyerRec?.tier as BuyerTier) || tierMap.get(key) || "TIER3",
+        tier:                    tierByName.get(t.buyerCompanyName.toLowerCase().trim()) ?? "OTHERS",
         previousYear:            parseFloat(prevYear.toFixed(1)),
         target,
         targetDue:               due,
@@ -209,6 +211,7 @@ export async function GET(req: Request) {
       tier1Count:   finalRows.filter((r) => r.tier === "TIER1").length,
       tier2Count:   finalRows.filter((r) => r.tier === "TIER2").length,
       tier3Count:   finalRows.filter((r) => r.tier === "TIER3").length,
+      othersCount:  finalRows.filter((r) => r.tier === "OTHERS").length,
       basmatiContainers:    parseFloat(totalBasmati.toFixed(1)),
       nonBasmatiContainers: parseFloat(totalNonBasmati.toFixed(1)),
       bySegment: finalRows.reduce((acc, r) => {

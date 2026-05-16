@@ -427,15 +427,23 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
       {/* Buyer tab — tier filter pills */}
       {tab === "buyer" && (
         <div className="flex gap-2 flex-wrap">
-          {(["", "TIER1", "TIER2", "TIER3"] as const).map((t) => (
+          {([
+            { val: "",       label: "All Tiers" },
+            { val: "TIER1",  label: "Tier 1" },
+            { val: "TIER2",  label: "Tier 2" },
+            { val: "TIER3",  label: "Tier 3" },
+            { val: "OTHERS", label: "Others" },
+          ] as const).map(({ val, label }) => (
             <button
-              key={t || "all"}
-              onClick={() => setFilters((f) => ({ ...f, salesPerson: t ? undefined : f.salesPerson }))}
+              key={val || "all"}
+              onClick={() => setFilters((f) => ({ ...f, tier: val || undefined } as typeof f))}
               className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
-                !t ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                (filters as { tier?: string }).tier === val || (!val && !(filters as { tier?: string }).tier)
+                  ? "bg-gray-800 text-white border-gray-800"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
               }`}
             >
-              {t === "" ? "All Tiers" : t === "TIER1" ? "🥇 Tier 1 — Key" : t === "TIER2" ? "🥈 Tier 2 — Growth" : "Tier 3"}
+              {label}
             </button>
           ))}
         </div>
