@@ -66,12 +66,12 @@ export async function sendConsolidatedEmail(params: {
       } catch { return m.nextDueDate }
     })()
 
-    const respCell = `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
+    const respCell = `<td style="padding:10px 10px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
 
-    const doneCell = `<td style="padding:10px 14px;text-align:center;border-bottom:1px solid #f3f4f6">
+    const doneCell = `<td style="padding:10px 12px;text-align:center;border-bottom:1px solid #f3f4f6">
         ${m.doneUrl
           ? `<a href="${esc(m.doneUrl)}" target="_blank" rel="noopener"
-               style="display:inline-block;padding:5px 14px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
+               style="display:inline-block;padding:6px 14px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
                ✓ Done
              </a>`
           : `<span style="color:#9ca3af;font-size:12px">—</span>`
@@ -80,14 +80,14 @@ export async function sendConsolidatedEmail(params: {
 
     return `
       <tr>
-        <td style="padding:10px 14px;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6">${esc(m.buyerName)}</td>
-        <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.country)}</td>
-        <td style="padding:10px 14px;text-align:center;border-bottom:1px solid #f3f4f6">
-          <span style="background:${tierBg};color:${tierColor};padding:3px 9px;border-radius:5px;font-size:11px;font-weight:700">${esc(tierLabel)}</span>
+        <td style="padding:12px 14px;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6;min-width:200px;max-width:260px;line-height:1.4;word-break:break-word">${esc(m.buyerName)}</td>
+        <td style="padding:10px 10px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.country)}</td>
+        <td style="padding:10px 8px;text-align:center;border-bottom:1px solid #f3f4f6">
+          <span style="background:${tierBg};color:${tierColor};padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap">${esc(tierLabel)}</span>
         </td>
         ${respCell}
-        <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${dueDateStr}</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #f3f4f6">
+        <td style="padding:10px 10px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${dueDateStr}</td>
+        <td style="padding:10px 10px;border-bottom:1px solid #f3f4f6">
           <span style="background:${statusBg};color:${statusColor};padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap">${statusText}</span>
         </td>
         ${doneCell}
@@ -98,7 +98,7 @@ export async function sendConsolidatedEmail(params: {
   function buildSection(emoji: string, title: string, borderColor: string, bg: string, rows: ConsolidatedMeetingRow[]): string {
     if (!rows.length) return ""
 
-    const respHeader = `<th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Responsible</th>`
+    const respHeader = `<th style="padding:9px 10px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Responsible</th>`
 
     return `
     <tr><td style="padding:20px 28px 0">
@@ -106,16 +106,16 @@ export async function sendConsolidatedEmail(params: {
         <p style="margin:0;font-size:13px;font-weight:700;color:${borderColor}">${emoji} ${title}</p>
       </div>
       <div style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="table-layout:auto">
           <thead>
             <tr>
-              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Buyer</th>
-              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Country</th>
-              <th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Tier</th>
+              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;min-width:200px">Buyer</th>
+              <th style="padding:9px 10px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Country</th>
+              <th style="padding:9px 8px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Tier</th>
               ${respHeader}
-              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Due Date</th>
-              <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Status</th>
-              <th style="padding:9px 14px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Action</th>
+              <th style="padding:9px 10px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;white-space:nowrap">Due Date</th>
+              <th style="padding:9px 10px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Status</th>
+              <th style="padding:9px 12px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -127,7 +127,8 @@ export async function sendConsolidatedEmail(params: {
   }
 
   // ── Full HTML ─────────────────────────────────────────────────────────────────
-  const headerBg   = isCoord ? "#1d4ed8" : "#1e293b"
+  // Responsible Person → yellow/amber header; Coordinator → blue header
+  const headerBg   = isCoord ? "#1d4ed8" : "#ca8a04"
   const headerRole = isCoord ? "Coordinator Alert" : "Sales Reminder"
   const headerMsg  = isCoord
     ? `you have ${count} meeting${count > 1 ? "s" : ""} to schedule`
@@ -152,7 +153,7 @@ export async function sendConsolidatedEmail(params: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;padding:24px 12px">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-  style="max-width:680px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+  style="max-width:760px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)">
 
   <!-- HEADER -->
   <tr><td style="background:${headerBg};padding:24px 28px">
