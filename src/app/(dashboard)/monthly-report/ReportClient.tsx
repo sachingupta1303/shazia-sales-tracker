@@ -143,264 +143,369 @@ function ChartTip({ active, payload, label }: any) {
 
 // ── PDF Generator ─────────────────────────────────────────────────────────────
 async function generatePDF(data: MonthlyReportData) {
-  const { default: jsPDF } = await import("jspdf")
+  const { default: jsPDF }     = await import("jspdf")
   const { default: autoTable } = await import("jspdf-autotable")
 
-  const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" })
-  const W = 210
-  const ML = 14, MR = 14
-
-  // Helper: section divider
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+  const W = 210, ML = 14, MR = 14
   let y = 0
-  function section(title: string) {
-    if (y > 255) { doc.addPage(); y = 14 }
-    doc.setFillColor(15, 23, 42)   // slate-900
-    doc.rect(ML, y, W-ML-MR, 7, "F")
-    doc.setTextColor(255,255,255)
-    doc.setFont("helvetica","bold")
-    doc.setFontSize(7.5)
-    doc.text(title.toUpperCase(), ML+3, y+4.8)
-    doc.setTextColor(0,0,0)
-    doc.setFont("helvetica","normal")
-    y += 9
+
+  // ── Watermark ──────────────────────────────────────────────────────────────
+  function drawWatermark() {
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(54)
+    doc.setTextColor(220, 242, 231)
+    doc.text("SHAZIA RICE", 55, 118, { angle: 45 })
+    doc.text("SHAZIA RICE", 95, 238, { angle: 45 })
+    doc.setTextColor(0, 0, 0)
   }
 
-  // ── Bar chart helper (draws horizontal bars inline) ────────────────────────
-  function hBar(
-    items: Array<{label:string; value:number; value2?:number}>,
-    opts: { col1Label:string; col2Label?:string }
+  // ── New page ───────────────────────────────────────────────────────────────
+  function newPage() {
+    doc.addPage()
+    drawWatermark()
+    y = 16
+  }
+
+  // ── Section header ─────────────────────────────────────────────────────────
+  function section(title: string) {
+    if (y > 255) newPage()
+    doc.setFillColor(15, 23, 42)
+    doc.rect(ML, y, W - ML - MR, 7.5, "F")
+    doc.setFillColor(5, 150, 105)
+    doc.rect(ML, y, 2.5, 7.5, "F")
+    doc.setTextColor(255, 255, 255)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(7.5)
+    doc.text(title.toUpperCase(), ML + 6, y + 5)
+    doc.setTextColor(0, 0, 0)
+    doc.setFont("helvetica", "normal")
+    y += 10
+  }
+
+  // ── autoTable with borders ─────────────────────────────────────────────────
+  function tbl(
+    head: string[][],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: any[][],
+    colStyles?: Record<number, object>,
+    headFill?: [number, number, number],
+  ) {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: ML, right: MR },
+      head,
+      body,
+      headStyles: {
+        fillColor: headFill ?? [5, 150, 105],
+        textColor: 255,
+        fontStyle: "bold",
+        fontSize: 7,
+        lineWidth: 0.25,
+        lineColor: [4, 120, 87] as [number,number,number],
+      },
+      bodyStyles: {
+        fontSize: 7,
+        lineWidth: 0.2,
+        lineColor: [226, 232, 240] as [number,number,number],
+      },
+      alternateRowStyles: { fillColor: [249, 250, 251] },
+      tableLineWidth: 0.3,
+      tableLineColor: [203, 213, 225] as [number,number,number],
+      columnStyles: colStyles ?? {},
+    })
+    y = (doc as any).lastAutoTable.finalY + 4
+  }
+
+  // ── KPI card ───────────────────────────────────────────────────────────────
+  function kpiCard(
+    cx: number, cy: number, cW: number, cH: number,
+    label: string, value: string, sub: string,
+    rgb: [number, number, number],
+  ) {
+    // shadow
+    doc.setFillColor(200, 210, 220)
+    doc.roundedRect(cx + 1, cy + 1, cW, cH, 2.5, 2.5, "F")
+    // body
+    doc.setFillColor(255, 255, 255)
+    doc.roundedRect(cx, cy, cW, cH, 2.5, 2.5, "F")
+    // border
+    doc.setDrawColor(226, 232, 240)
+    doc.setLineWidth(0.3)
+    doc.roundedRect(cx, cy, cW, cH, 2.5, 2.5, "S")
+    // colored top stripe
+    doc.setFillColor(...rgb)
+    doc.roundedRect(cx, cy, cW, 7, 2.5, 2.5, "F")
+    doc.rect(cx, cy + 3, cW, 4, "F")
+    // label in stripe
+    doc.setTextColor(255, 255, 255)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(5.8)
+    doc.text(label.toUpperCase(), cx + cW / 2, cy + 5, { align: "center" })
+    // value
+    doc.setTextColor(15, 23, 42)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(11)
+    doc.text(value, cx + cW / 2, cy + 15, { align: "center" })
+    // sub
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(5.5)
+    doc.setTextColor(107, 114, 128)
+    doc.text(sub, cx + cW / 2, cy + 20.5, { align: "center" })
+  }
+
+  // ── Horizontal bar chart ───────────────────────────────────────────────────
+  function barChart(
+    items: Array<{ label: string; value: number; sub?: string }>,
+    rgb: [number, number, number] = [5, 150, 105],
   ) {
     if (!items.length) return
-    const barAreaX = ML + 55
-    const barAreaW = W - MR - barAreaX - 18
-    const rowH = 5.5, gap = 1.5
-    const maxVal = Math.max(...items.map(d => Math.max(d.value, d.value2??0)))
-    doc.setFontSize(6.5)
-    doc.setTextColor(107,114,128)
-    doc.text(opts.col1Label, barAreaX + barAreaW*0.35, y-1, {align:"center"})
-    if (opts.col2Label) doc.text(opts.col2Label, barAreaX + barAreaW*0.75, y-1, {align:"center"})
-    doc.setTextColor(55,65,81)
-    items.forEach((d,i) => {
-      const ry = y + i*(rowH*2+gap*2+1)
-      // label
-      doc.setFontSize(7); doc.setFont("helvetica","normal")
-      doc.text(d.label.length>16?d.label.slice(0,15)+"…":d.label, barAreaX-2, ry+rowH*0.75, {align:"right"})
-      // bar 1
-      doc.setFillColor(241,245,249)
-      doc.roundedRect(barAreaX, ry, barAreaW, rowH, 1,1,"F")
-      if (maxVal>0) {
-        const bw = (d.value/maxVal)*barAreaW
-        doc.setFillColor(5,150,105)   // emerald
-        doc.roundedRect(barAreaX, ry, Math.max(bw,1), rowH, 1,1,"F")
+    const bX = ML + 52, bW = W - MR - bX - 24
+    const rH = 6.5, gap = 3.5
+    const maxV = Math.max(...items.map(d => d.value), 0.01)
+    items.forEach((d, i) => {
+      const ry = y + i * (rH + gap)
+      doc.setFontSize(7)
+      doc.setFont("helvetica", "normal")
+      doc.setTextColor(55, 65, 81)
+      const lbl = d.label.length > 16 ? d.label.slice(0, 15) + "…" : d.label
+      doc.text(lbl, bX - 3, ry + rH * 0.72, { align: "right" })
+      // track
+      doc.setFillColor(241, 245, 249)
+      doc.roundedRect(bX, ry, bW, rH, 1.5, 1.5, "F")
+      // fill
+      const fw = Math.max((d.value / maxV) * bW, d.value > 0 ? 2 : 0)
+      if (fw > 0) {
+        doc.setFillColor(...rgb)
+        doc.roundedRect(bX, ry, fw, rH, 1.5, 1.5, "F")
       }
-      doc.setFontSize(6); doc.text(fmt(d.value,1), barAreaX+barAreaW+2, ry+rowH*0.75)
-      // bar 2 (target)
-      if (d.value2 !== undefined) {
-        doc.setFillColor(241,245,249)
-        doc.roundedRect(barAreaX, ry+rowH+1, barAreaW, rowH, 1,1,"F")
-        if (maxVal>0) {
-          const bw2 = (d.value2/maxVal)*barAreaW
-          doc.setFillColor(209,250,229)
-          doc.roundedRect(barAreaX, ry+rowH+1, Math.max(bw2,1), rowH, 1,1,"F")
-        }
-        doc.setFontSize(6); doc.text(fmt(d.value2,1), barAreaX+barAreaW+2, ry+rowH*1.9+1)
-      }
+      // value label
+      doc.setFontSize(6.5)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(55, 65, 81)
+      doc.text(`${fmt(d.value, 1)}${d.sub ?? ""}`, bX + fw + 2.5, ry + rH * 0.72)
     })
-    y += items.length * (d2 => d2.value2!==undefined?rowH*2+gap*2+1:rowH+gap+1)(items[0]) + 4
-    y += items.length * (rowH + gap) // rough estimate
+    y += items.length * (rH + gap) + 5
   }
 
-  // ── PAGE 1: Header ────────────────────────────────────────────────────────
-  doc.setFillColor(5,150,105)
-  doc.rect(0, 0, W, 30, "F")
-  // accent strip
-  doc.setFillColor(4,120,87)
-  doc.rect(0, 22, W, 8, "F")
-  doc.setTextColor(255,255,255)
-  doc.setFont("helvetica","bold"); doc.setFontSize(6)
-  doc.text("SHAZIA RICE EXPORT  ·  CONFIDENTIAL  ·  INTERNAL USE ONLY", ML, 8)
+  // ── PAGE 1 ─────────────────────────────────────────────────────────────────
+  drawWatermark()
+
+  // Header: dark top + emerald main band + accent strip
+  doc.setFillColor(15, 23, 42)
+  doc.rect(0, 0, W, 10, "F")
+  doc.setFillColor(5, 150, 105)
+  doc.rect(0, 10, W, 22, "F")
+  doc.setFillColor(4, 120, 87)
+  doc.rect(0, 30, W, 3, "F")
+
+  doc.setTextColor(255, 255, 255)
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(5.5)
+  doc.text("SHAZIA RICE EXPORT  ·  CONFIDENTIAL  ·  INTERNAL USE ONLY", ML, 7)
   doc.setFontSize(17)
-  doc.text("Monthly MIS Report", ML, 17)
-  doc.setFont("helvetica","normal"); doc.setFontSize(9)
-  doc.text(`${data.calendarMonthYear}   ·   FY ${data.fy}`, ML, 26)
-  const genDate = new Date(data.generatedAt).toLocaleString("en-IN",{
-    timeZone:"Asia/Kolkata",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"
+  doc.text("Monthly MIS Report", ML, 21)
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(9.5)
+  doc.text(`${data.calendarMonthYear}   ·   FY ${data.fy}`, ML, 28)
+
+  const genDate = new Date(data.generatedAt).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata", day: "2-digit", month: "short",
+    year: "numeric", hour: "2-digit", minute: "2-digit",
   })
   doc.setFontSize(6.5)
-  doc.text(`Generated: ${genDate} IST`, W-MR, 26, {align:"right"})
-  y = 36
+  doc.text(`Generated: ${genDate} IST`, W - MR, 28, { align: "right" })
 
-  // ── KPI row ───────────────────────────────────────────────────────────────
+  // SR logo circle
+  doc.setFillColor(255, 255, 255)
+  doc.circle(W - MR - 8, 18, 7, "F")
+  doc.setTextColor(5, 150, 105)
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(9)
+  doc.text("SR", W - MR - 8, 20.2, { align: "center" })
+
+  y = 38
+
+  // ── KPI Cards ──────────────────────────────────────────────────────────────
   const s = data.summary
-  const kpis = [
-    ["Containers",  fmt(s.totalContainers,1)],
-    ["Target",      fmt(s.totalMonthlyTarget,1)],
-    ["Achievement", `${s.achievementPct}%`],
-    ["Revenue",     fmtUSD(s.totalAmount)],
-    ["Markets",     String(s.activeCountries)],
-  ]
-  const bw = (W-ML-MR-8)/5
-  kpis.forEach(([lbl,val],i) => {
-    const bx = ML + i*(bw+2)
-    const isA = i===2
-    const aPct = s.achievementPct
-    doc.setFillColor(
-      isA ? (aPct>=100?209:254) : 248,
-      isA ? (aPct>=100?250:243) : 250,
-      isA ? (aPct>=100?229:199) : 252,
-    )
-    doc.roundedRect(bx, y, bw, 15, 2,2,"F")
-    doc.setTextColor(107,114,128); doc.setFont("helvetica","normal"); doc.setFontSize(6)
-    doc.text(lbl, bx+bw/2, y+4.5, {align:"center"})
-    doc.setFont("helvetica","bold"); doc.setFontSize(isA?12:10.5)
-    doc.setTextColor(
-      isA&&aPct>=100?5:15,
-      isA&&aPct>=100?150:23,
-      isA&&aPct>=100?105:42,
-    )
-    doc.text(val, bx+bw/2, y+11, {align:"center"})
-  })
-  y += 18
-
-  // Achievement bar
-  doc.setFillColor(229,231,235)
-  doc.roundedRect(ML, y, W-ML-MR, 4, 1,1,"F")
-  const barW = Math.min(s.achievementPct,100)/100*(W-ML-MR)
   const aPct = s.achievementPct
-  doc.setFillColor(aPct>=100?5:aPct>=75?217:220, aPct>=100?150:aPct>=75?119:38, aPct>=100?105:aPct>=75?6:38)
-  doc.roundedRect(ML, y, Math.max(barW,2), 4, 1,1,"F")
-  doc.setFontSize(6); doc.setFont("helvetica","normal"); doc.setTextColor(107,114,128)
-  doc.text(`${fmt(s.totalContainers,1)} / ${fmt(s.totalMonthlyTarget,1)} containers  ·  ${s.piCount} orders  ·  ${s.uniqueBuyers} buyers  ·  ${s.activeSalesPersons} sales persons`, ML, y+8)
-  y += 11
+  const achRgb: [number,number,number] = aPct >= 100 ? [5,150,105] : aPct >= 75 ? [217,119,6] : [220,38,38]
 
-  // ── Variety breakdown ─────────────────────────────────────────────────────
-  section("Variety Breakdown")
-  autoTable(doc, {
-    startY: y, margin:{left:ML,right:MR},
-    head:[["Variety","Containers","Metric Tonnes","Revenue","Share %"]],
-    body: data.varietyBreakdown.map(v=>[v.variety,fmt(v.containers,1),fmt(v.mts,1),fmtUSD(v.amount),`${v.containersPct}%`]),
-    headStyles:{fillColor:[5,150,105],textColor:255,fontStyle:"bold",fontSize:7.5},
-    bodyStyles:{fontSize:8},
-    alternateRowStyles:{fillColor:[249,250,251]},
-    columnStyles:{0:{fontStyle:"bold"},1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}},
+  const kpiDefs: Array<{ label:string; value:string; sub:string; rgb:[number,number,number] }> = [
+    { label: "Containers",     value: fmt(s.totalContainers, 1),    sub: `Target: ${fmt(s.totalMonthlyTarget, 1)}`, rgb: [5,150,105]  },
+    { label: "Achievement",    value: `${aPct}%`,                    sub: "vs Monthly Target",                       rgb: achRgb       },
+    { label: "Revenue",        value: fmtUSD(s.totalAmount),         sub: `${s.piCount} orders`,                    rgb: [29,78,216]  },
+    { label: "Total MTs",      value: fmt(s.totalMTs, 1),            sub: "Metric Tonnes",                           rgb: [124,58,237] },
+    { label: "Markets·Buyers", value: `${s.activeCountries}·${s.uniqueBuyers}`, sub: `${s.activeSalesPersons} SP`, rgb: [71,85,105]  },
+  ]
+  const cW = (W - ML - MR - 4 * 2) / 5
+  kpiDefs.forEach((k, i) => {
+    kpiCard(ML + i * (cW + 2), y, cW, 24, k.label, k.value, k.sub, k.rgb)
   })
-  y = (doc as any).lastAutoTable.finalY + 3
+  y += 27
 
-  // Description sub-table (within each variety)
+  // Achievement progress bar
+  doc.setFillColor(229, 231, 235)
+  doc.roundedRect(ML, y, W - ML - MR, 4, 1, 1, "F")
+  const fillW = Math.max((Math.min(aPct, 100) / 100) * (W - ML - MR), 2)
+  doc.setFillColor(...achRgb)
+  doc.roundedRect(ML, y, fillW, 4, 1, 1, "F")
+  doc.setFontSize(6)
+  doc.setFont("helvetica", "normal")
+  doc.setTextColor(107, 114, 128)
+  doc.text(
+    `${fmt(s.totalContainers,1)} / ${fmt(s.totalMonthlyTarget,1)} containers  ·  ${s.piCount} orders  ·  ${s.uniqueBuyers} buyers  ·  ${s.activeSalesPersons} sales persons`,
+    ML, y + 8,
+  )
+  y += 12
+
+  // ── Variety Breakdown ──────────────────────────────────────────────────────
+  section("Variety Breakdown")
+  tbl(
+    [["Variety", "Containers", "Metric Tonnes", "Revenue", "Share %"]],
+    data.varietyBreakdown.map(v => [v.variety, fmt(v.containers,1), fmt(v.mts,1), fmtUSD(v.amount), `${v.containersPct}%`]) as any,
+    { 0:{fontStyle:"bold"}, 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"} },
+  )
+
   for (const v of data.varietyBreakdown) {
     if (!v.descriptions.length) continue
+    if (y > 255) newPage()
     doc.setFontSize(7); doc.setFont("helvetica","bold"); doc.setTextColor(55,65,81)
-    doc.text(`  ${v.variety} — Description Breakdown`, ML+2, y+3)
-    y += 5
-    autoTable(doc, {
-      startY: y, margin:{left:ML+6,right:MR+6},
-      head:[["Description","Containers","MTs","Revenue"]],
-      body: v.descriptions.map(d=>[d.description,fmt(d.containers,1),fmt(d.mts,1),fmtUSD(d.amount)]),
-      headStyles:{fillColor:[209,250,229],textColor:[5,150,105],fontStyle:"bold",fontSize:7},
-      bodyStyles:{fontSize:7},
-      alternateRowStyles:{fillColor:[249,250,251]},
-      columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"}},
-    })
-    y = (doc as any).lastAutoTable.finalY + 3
+    doc.text(`  ${v.variety} — Description Breakdown`, ML + 3, y + 3)
+    y += 6
+    tbl(
+      [["Description", "Containers", "MTs", "Revenue"]],
+      v.descriptions.map(d => [d.description, fmt(d.containers,1), fmt(d.mts,1), fmtUSD(d.amount)]) as any,
+      { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"} },
+      [209, 250, 229],
+    )
   }
 
-  // ── Country Performance ───────────────────────────────────────────────────
-  if (y > 220) { doc.addPage(); y = 14 }
+  // ── Country Performance ────────────────────────────────────────────────────
+  if (y > 220) newPage()
   section("Country Performance")
-  autoTable(doc, {
-    startY: y, margin:{left:ML,right:MR},
-    head:[["Country","Target (Ctrs)","Actual (Ctrs)","Achievement %","MTs","Revenue","Share %","Buyers"]],
-    body: data.countryBreakdown.map((c,i)=>[
+  tbl(
+    [["Country","Target (Ctrs)","Actual (Ctrs)","Achievement %","MTs","Revenue","Share %","Buyers"]],
+    data.countryBreakdown.map((c, i) => [
       `${i+1}. ${c.country}`,
-      c.monthlyTarget>0?fmt(c.monthlyTarget,1):"—",
+      c.monthlyTarget > 0 ? fmt(c.monthlyTarget,1) : "—",
       fmt(c.containers,1),
-      c.monthlyTarget>0?`${c.achievementPct}%`:"—",
+      c.monthlyTarget > 0 ? `${c.achievementPct}%` : "—",
       fmt(c.mts,1),
       fmtUSD(c.amount),
       `${c.pct}%`,
-      c.buyerCount,
-    ]),
-    headStyles:{fillColor:[5,150,105],textColor:255,fontStyle:"bold",fontSize:6.5},
-    bodyStyles:{fontSize:7},
-    alternateRowStyles:{fillColor:[249,250,251]},
-    columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"},5:{halign:"right"},6:{halign:"right"},7:{halign:"right"}},
-  })
-  y = (doc as any).lastAutoTable.finalY + 4
+      String(c.buyerCount),
+    ]) as any,
+    { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"}, 7:{halign:"right"} },
+  )
 
-  // ── Sales Person bar chart ────────────────────────────────────────────────
-  if (y > 220) { doc.addPage(); y = 14 }
-  section("Sales Person Performance")
-  {
-    const items = data.salesPersonBreakdown
-    const bAreaX = ML + 55, bAreaW = W-MR-bAreaX-20
-    const rH = 7, gap = 3
-    const maxMT = Math.max(...items.map(d=>d.mts), 1)
-    items.forEach((sp, i) => {
-      const ry = y + i*(rH+gap)
-      doc.setFontSize(7); doc.setFont("helvetica","normal"); doc.setTextColor(55,65,81)
-      const lbl = sp.salesPerson.length>16?sp.salesPerson.slice(0,15)+"…":sp.salesPerson
-      doc.text(lbl, bAreaX-3, ry+rH*0.72, {align:"right"})
-      // bg
-      doc.setFillColor(241,245,249)
-      doc.roundedRect(bAreaX, ry, bAreaW, rH, 1.5,1.5,"F")
-      // fill
-      const fw = (sp.mts/maxMT)*bAreaW
-      // gradient effect: slightly darker shade
-      doc.setFillColor(5,150,105)
-      doc.roundedRect(bAreaX, ry, Math.max(fw,2), rH, 1.5,1.5,"F")
-      // value
-      doc.setFontSize(6.5); doc.setFont("helvetica","bold"); doc.setTextColor(55,65,81)
-      doc.text(`${fmt(sp.mts,1)} MTs  (${sp.share}%)`, bAreaX+fw+3, ry+rH*0.72)
-    })
-    y += items.length*(rH+gap)+4
+  // ── Sales Person — Bar Chart + Table ──────────────────────────────────────
+  if (y > 200) newPage()
+  section("Sales Person Performance — MTs Contributed")
+  if (data.salesPersonBreakdown.length > 0) {
+    barChart(
+      data.salesPersonBreakdown.map(sp => ({
+        label: sp.salesPerson,
+        value: sp.mts,
+        sub: ` MTs  (${sp.share}%)`,
+      })),
+      [5, 150, 105],
+    )
   }
+  if (y > 220) newPage()
+  tbl(
+    [["Sales Person","Containers","MTs","Revenue","Share %","Buyers"]],
+    data.salesPersonBreakdown.map(sp => [sp.salesPerson, fmt(sp.containers,1), fmt(sp.mts,1), fmtUSD(sp.amount), `${sp.share}%`, String(sp.buyerCount)]) as any,
+    { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"} },
+  )
 
-  // ── Buyers Target vs Actual ───────────────────────────────────────────────
-  if (y > 220) { doc.addPage(); y = 14 }
+  // ── Buyers — Target vs Actual ──────────────────────────────────────────────
+  if (y > 220) newPage()
   section("Buyers — Target vs Actual")
-  autoTable(doc, {
-    startY: y, margin:{left:ML,right:MR},
-    head:[["Buyer","Country","Tier","Target/Mo","Actual Ctrs","Achievement %","Revenue"]],
-    body: data.buyerBreakdown.map(b=>[
-      b.buyerName,
-      b.country,
-      b.tier,
-      b.monthlyTarget>0?fmt(b.monthlyTarget,1):"—",
+  tbl(
+    [["Buyer","Country","Tier","Target/Mo","Actual Ctrs","Achievement %","Revenue"]],
+    data.buyerBreakdown.map(b => [
+      b.buyerName, b.country, b.tier,
+      b.monthlyTarget > 0 ? fmt(b.monthlyTarget,1) : "—",
       fmt(b.containers,1),
-      b.monthlyTarget>0?`${b.achievementPct}%`:"—",
+      b.monthlyTarget > 0 ? `${b.achievementPct}%` : "—",
       fmtUSD(b.amount),
-    ]),
-    headStyles:{fillColor:[5,150,105],textColor:255,fontStyle:"bold",fontSize:6.5},
-    bodyStyles:{fontSize:7},
-    alternateRowStyles:{fillColor:[249,250,251]},
-    columnStyles:{3:{halign:"right"},4:{halign:"right"},5:{halign:"right"},6:{halign:"right"}},
-  })
-  y = (doc as any).lastAutoTable.finalY + 4
+    ]) as any,
+    { 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"} },
+  )
 
-  // ── Meetings ──────────────────────────────────────────────────────────────
-  if (y > 245) { doc.addPage(); y = 14 }
+  // ── Meetings ───────────────────────────────────────────────────────────────
+  if (y > 245) newPage()
   section(`Meetings Done — ${data.calendarMonthYear}`)
   const ms = data.meetingsSummary
-  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(55,65,81)
-  doc.text(
-    `Total Done: ${ms.totalDone} / ${ms.totalBuyers} buyers   |   Tier 1: ${ms.byTier.TIER1.done}/${ms.byTier.TIER1.total}   Tier 2: ${ms.byTier.TIER2.done}/${ms.byTier.TIER2.total}   Tier 3: ${ms.byTier.TIER3.done}/${ms.byTier.TIER3.total}`,
-    ML, y+3
-  )
-  y += 8
+  const mCardW = (W - ML - MR - 6) / 4
 
-  // ── Footer on all pages ───────────────────────────────────────────────────
+  // Total card (green)
+  doc.setFillColor(5, 150, 105)
+  doc.roundedRect(ML, y, mCardW, 22, 2, 2, "F")
+  doc.setDrawColor(4, 120, 87); doc.setLineWidth(0.3)
+  doc.roundedRect(ML, y, mCardW, 22, 2, 2, "S")
+  doc.setTextColor(255, 255, 255)
+  doc.setFont("helvetica","bold"); doc.setFontSize(6)
+  doc.text("TOTAL DONE", ML + mCardW / 2, y + 5.5, { align:"center" })
+  doc.setFontSize(16)
+  doc.text(String(ms.totalDone), ML + mCardW / 2, y + 14, { align:"center" })
+  doc.setFont("helvetica","normal"); doc.setFontSize(5.5)
+  doc.text(`/ ${ms.totalBuyers} buyers`, ML + mCardW / 2, y + 19, { align:"center" })
+
+  // Tier cards
+  const tierDefs: Array<{ key:"TIER1"|"TIER2"|"TIER3"; label:string; rgb:[number,number,number] }> = [
+    { key:"TIER1", label:"Tier 1 — Key Accounts", rgb:[124,58,237] },
+    { key:"TIER2", label:"Tier 2 — Growth",        rgb:[29,78,216]  },
+    { key:"TIER3", label:"Tier 3 — Standard",      rgb:[5,150,105]  },
+  ]
+  tierDefs.forEach(({ key, label, rgb }, i) => {
+    const stat = ms.byTier[key]
+    const pct  = stat.total > 0 ? Math.round(stat.done / stat.total * 100) : 0
+    const cx   = ML + (i + 1) * (mCardW + 2)
+    // shadow
+    doc.setFillColor(200, 210, 220)
+    doc.roundedRect(cx + 1, y + 1, mCardW, 22, 2, 2, "F")
+    // body
+    doc.setFillColor(255, 255, 255)
+    doc.roundedRect(cx, y, mCardW, 22, 2, 2, "F")
+    doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.3)
+    doc.roundedRect(cx, y, mCardW, 22, 2, 2, "S")
+    // stripe
+    doc.setFillColor(...rgb)
+    doc.roundedRect(cx, y, mCardW, 7, 2, 2, "F")
+    doc.rect(cx, y + 3, mCardW, 4, "F")
+    // label
+    doc.setTextColor(255, 255, 255)
+    doc.setFont("helvetica","bold"); doc.setFontSize(5.5)
+    doc.text(label, cx + mCardW / 2, y + 5, { align:"center" })
+    // count
+    doc.setTextColor(15, 23, 42)
+    doc.setFontSize(14)
+    doc.text(String(stat.done), cx + mCardW / 2, y + 14.5, { align:"center" })
+    // sub
+    doc.setFont("helvetica","normal"); doc.setFontSize(5.5)
+    doc.setTextColor(107, 114, 128)
+    doc.text(`/ ${stat.total} buyers  ·  ${pct}%`, cx + mCardW / 2, y + 19.5, { align:"center" })
+  })
+  y += 26
+
+  // ── Footer on all pages ────────────────────────────────────────────────────
   const pages = (doc as any).internal.getNumberOfPages()
-  for (let i=1; i<=pages; i++) {
-    doc.setPage(i)
-    doc.setFillColor(248,250,252)
-    doc.rect(0,287,W,10,"F")
-    doc.setFillColor(5,150,105); doc.rect(0,287,W,0.5,"F")
-    doc.setTextColor(156,163,175); doc.setFontSize(6); doc.setFont("helvetica","normal")
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p)
+    doc.setFillColor(15, 23, 42)
+    doc.rect(0, 287, W, 10, "F")
+    doc.setFillColor(5, 150, 105)
+    doc.rect(0, 287, W, 0.8, "F")
+    doc.setTextColor(156, 163, 175)
+    doc.setFontSize(6)
+    doc.setFont("helvetica", "normal")
     doc.text("Shazia Rice Export  ·  Monthly MIS Report  ·  Confidential", ML, 293)
-    doc.text(`Page ${i} of ${pages}   ·   ${data.calendarMonthYear}  ·  FY ${data.fy}`, W-MR, 293, {align:"right"})
+    doc.text(`Page ${p} of ${pages}   ·   ${data.calendarMonthYear}  ·  FY ${data.fy}`, W - MR, 293, { align:"right" })
   }
 
-  doc.save(`MIS-${data.calendarMonthYear.replace(/\s+/g,"-")}-FY${data.fy}.pdf`)
+  doc.save(`MIS-${data.calendarMonthYear.replace(/\s+/g, "-")}-FY${data.fy}.pdf`)
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
