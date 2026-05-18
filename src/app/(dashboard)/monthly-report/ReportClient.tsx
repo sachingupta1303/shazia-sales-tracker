@@ -15,7 +15,7 @@ interface BuyerRow        { buyerName: string; country: string; tier: string; re
 interface TierStat        { done: number; total: number }
 
 interface MonthlyReportData {
-  fy: string; fyMonthNo: number; monthName: string; calendarMonthYear: string; generatedAt: string
+  fy: string; fyMonthNo: number; selectedMonths: number[]; monthName: string; calendarMonthYear: string; generatedAt: string
   summary: { totalContainers: number; totalMTs: number; totalAmount: number; totalMonthlyTarget: number; achievementPct: number; uniqueBuyers: number; piCount: number; activeCountries: number; activeSalesPersons: number }
   varietyBreakdown:      VarietyRow[]
   countryBreakdown:      CountryRow[]
@@ -29,6 +29,12 @@ const FY_MONTHS = [
   {no:1,name:"April"},{no:2,name:"May"},{no:3,name:"June"},{no:4,name:"July"},
   {no:5,name:"August"},{no:6,name:"September"},{no:7,name:"October"},{no:8,name:"November"},
   {no:9,name:"December"},{no:10,name:"January"},{no:11,name:"February"},{no:12,name:"March"},
+]
+const QUARTERS = [
+  { label:"Q1", months:[1,2,3],   sub:"Apr–Jun" },
+  { label:"Q2", months:[4,5,6],   sub:"Jul–Sep" },
+  { label:"Q3", months:[7,8,9],   sub:"Oct–Dec" },
+  { label:"Q4", months:[10,11,12],sub:"Jan–Mar" },
 ]
 
 // Professional palette
@@ -561,28 +567,117 @@ async function generatePDF(data: MonthlyReportData) {
   doc.save(`MIS-${data.calendarMonthYear.replace(/\s+/g, "-")}-FY${data.fy}.pdf`)
 }
 
+// ── Multi-select Month Picker ─────────────────────────────────────────────────
+function MonthPicker({
+  selectedMonths, onChange,
+}: { selectedMonths: number[]; onChange: (m: number[]) => void }) {
+  const [open, setOpen] = useState(false)
+
+  const toggle = (no: number) => {
+    onChange(
+      selectedMonths.includes(no)
+        ? selectedMonths.filter(m => m !== no).sort((a,b)=>a-b)
+        : [...selectedMonths, no].sort((a,b)=>a-b)
+    )
+  }
+  const setQuarter = (months: number[]) => { onChange(months); setOpen(false) }
+  const setAll     = () => onChange(FY_MONTHS.map(m=>m.no))
+  const setClear   = () => onChange([getCurrentFYMonth()])
+
+  // Label for the button
+  const label = (() => {
+    if (selectedMonths.length === 0)  return "Select months"
+    if (selectedMonths.length === 12) return "Full Year"
+    for (const q of QUARTERS) {
+      if (q.months.length === selectedMonths.length && q.months.every((m,i)=>selectedMonths[i]===m))
+        return `${q.label} (${q.sub})`
+    }
+    if (selectedMonths.length === 1)
+      return FY_MONTHS.find(m=>m.no===selectedMonths[0])?.name ?? "—"
+    return `${selectedMonths.length} months`
+  })()
+
+  return (
+    <div className="relative">
+      <button
+        onClick={()=>setOpen(o=>!o)}
+        className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white min-w-[140px] justify-between focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <span className="text-slate-700 font-medium">{label}</span>
+        <span className="text-gray-400 text-xs">{open?"▲":"▼"}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-64">
+          {/* Quarter quick-select */}
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Quick Select</p>
+          <div className="grid grid-cols-4 gap-1.5 mb-3">
+            {QUARTERS.map(q => {
+              const active = q.months.length === selectedMonths.length && q.months.every((m,i)=>selectedMonths[i]===m)
+              return (
+                <button key={q.label} onClick={()=>setQuarter(q.months)}
+                  className={`text-xs font-bold py-1.5 rounded-lg transition-colors ${active ? "bg-blue-700 text-white" : "bg-gray-100 text-slate-700 hover:bg-blue-50 hover:text-blue-700"}`}>
+                  {q.label}
+                  <span className="block text-[9px] font-normal opacity-70">{q.sub}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex gap-1.5 mb-3">
+            <button onClick={setAll}
+              className="flex-1 text-xs py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium">Full Year</button>
+            <button onClick={setClear}
+              className="flex-1 text-xs py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 font-medium">Reset</button>
+          </div>
+
+          {/* Individual months */}
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Individual Months</p>
+          <div className="grid grid-cols-3 gap-1">
+            {FY_MONTHS.map(m => {
+              const sel = selectedMonths.includes(m.no)
+              return (
+                <label key={m.no}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors ${sel ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-600 hover:bg-gray-50"}`}>
+                  <input type="checkbox" checked={sel} onChange={()=>toggle(m.no)} className="w-3 h-3 accent-blue-600"/>
+                  {m.name.slice(0,3)}
+                </label>
+              )
+            })}
+          </div>
+
+          <button onClick={()=>setOpen(false)}
+            className="mt-3 w-full text-xs py-1.5 rounded-lg bg-blue-700 text-white font-semibold hover:bg-blue-800">
+            Apply
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function ReportClient({ userRole }: { userRole: string }) {
   const fyList  = genFYList()
-  const [fy,       setFY]        = useState(getCurrentFY)
-  const [month,    setMonth]     = useState(getCurrentFYMonth)
-  const [data,     setData]      = useState<MonthlyReportData|null>(null)
-  const [loading,  setLoading]   = useState(false)
-  const [pdfBusy,  setPdfBusy]   = useState(false)
-  const [error,    setError]     = useState<string|null>(null)
-  const [openDesc, setOpenDesc]  = useState<string|null>(null)  // variety description open
+  const [fy,            setFY]        = useState(getCurrentFY)
+  const [selectedMonths,setMonths]    = useState<number[]>([getCurrentFYMonth()])
+  const [data,          setData]      = useState<MonthlyReportData|null>(null)
+  const [loading,       setLoading]   = useState(false)
+  const [pdfBusy,       setPdfBusy]   = useState(false)
+  const [error,         setError]     = useState<string|null>(null)
+  const [openDesc,      setOpenDesc]  = useState<string|null>(null)
 
-  const fetchReport = useCallback(async (f:string, m:number) => {
+  const fetchReport = useCallback(async (f: string, months: number[]) => {
+    if (!months.length) return
     setLoading(true); setError(null)
     try {
-      const res = await fetch(`/api/monthly-report?fy=${f}&month=${m}`)
+      const res = await fetch(`/api/monthly-report?fy=${f}&months=${months.join(",")}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setData(await res.json())
     } catch(e:any){ setError(e.message||"Failed to load") }
     finally{ setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchReport(fy, month) }, [fy, month, fetchReport])
+  useEffect(() => { fetchReport(fy, selectedMonths) }, [fy, selectedMonths, fetchReport])
 
   const handleDownload = async () => {
     if (!data) return
@@ -603,14 +698,11 @@ export function ReportClient({ userRole }: { userRole: string }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <select value={fy} onChange={e=>setFY(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <select value={fy} onChange={e=>{ setFY(e.target.value); setMonths([getCurrentFYMonth()]) }}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             {fyList.map(f=><option key={f} value={f}>FY {f}</option>)}
           </select>
-          <select value={month} onChange={e=>setMonth(Number(e.target.value))}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-            {FY_MONTHS.map(m=><option key={m.no} value={m.no}>{m.name}</option>)}
-          </select>
+          <MonthPicker selectedMonths={selectedMonths} onChange={setMonths}/>
           <button onClick={handleDownload} disabled={!data||loading||pdfBusy}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-40"
             style={{background:C.emerald}}>

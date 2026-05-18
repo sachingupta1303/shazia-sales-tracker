@@ -1,8 +1,11 @@
 /**
- * GET /api/monthly-report?fy=2025-26&month=2
+ * GET /api/monthly-report?fy=2025-26&months=1,2,3
  *
- * Monthly MIS aggregation.
+ * Monthly / Multi-month / Quarterly MIS aggregation.
  * FY month: 1=April … 9=December, 10=January, 11=February, 12=March
+ * Accepts:  months=1       (single month, backward-compat)
+ *           months=1,2,3   (multi-month merge)
+ *           month=1        (legacy single-month param)
  */
 
 import { NextResponse } from "next/server"
@@ -15,12 +18,11 @@ import type { FinancialYear } from "@/types"
 
 function fyMonthToCalendar(fyMonthNo: number, fy: string) {
   const fyStartYear = parseInt(fy.split("-")[0], 10)
-  const calMonth    = (3 + fyMonthNo - 1) % 12          // 0-indexed, Apr=3
+  const calMonth    = (3 + fyMonthNo - 1) % 12   // 0-indexed, Apr=3
   const calYear     = fyMonthNo <= 9 ? fyStartYear : fyStartYear + 1
   return { month: calMonth, year: calYear }
 }
 
-/** Normalize variety: "Basmati" / "BASMATI" → "BASMATI"; anything with "non" → "NON BASMATI" */
 function normalizeVariety(raw: string): string {
   const s = (raw ?? "").trim().toLowerCase().replace(/[^a-z\s]/g, "")
   if (s.includes("non") && s.includes("basmati")) return "NON BASMATI"
@@ -29,29 +31,47 @@ function normalizeVariety(raw: string): string {
   return raw.trim().toUpperCase()
 }
 
-/** Normalize description: consistent uppercase + whitespace */
 function normalizeDescription(raw: string): string {
   return (raw ?? "").trim().toUpperCase().replace(/\s+/g, " ") || "NOT SPECIFIED"
-}
-
-function getMonthPI(
-  fyPI: ReturnType<typeof filterPIByFY>,
-  fy: string,
-  fyMonth: number,
-) {
-  return fyPI.filter((r) => {
-    if (r.fyMonthNo > 0) return r.fyMonthNo === fyMonth
-    const d = parsePIDate(r.piDate)
-    if (isNaN(d.getTime())) return false
-    const { month, year } = fyMonthToCalendar(fyMonth, fy)
-    return d.getMonth() === month && d.getFullYear() === year
-  })
 }
 
 const FY_MONTH_NAMES = [
   "", "April","May","June","July","August","September",
   "October","November","December","January","February","March",
 ]
+const FY_MONTH_SHORT = [
+  "", "Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar",
+]
+
+/** Build a human-readable period label for the selected months */
+function buildPeriodLabel(months: number[], fy: string): { label: string; shortLabel: string } {
+  if (months.length === 0) return { label: "No Period", shortLabel: "—" }
+
+  const fyStartYear = parseInt(fy.split("-")[0], 10)
+  const calYear = (m: number) => m <= 9 ? fyStartYear : fyStartYear + 1
+
+  // Check if it matches a quarter
+  const QUARTERS: Record<string, number[]> = {
+    "Q1": [1,2,3], "Q2": [4,5,6], "Q3": [7,8,9], "Q4": [10,11,12],
+  }
+  for (const [q, qm] of Object.entries(QUARTERS)) {
+    if (months.length === 3 && qm.every((m,i) => months[i] === m)) {
+      const yr1 = calYear(qm[0]), yr2 = calYear(qm[2])
+      const yrStr = yr1 === yr2 ? String(yr1) : `${yr1}–${yr2}`
+      return { label: `${q} FY ${fy} (${FY_MONTH_SHORT[qm[0]]}–${FY_MONTH_SHORT[qm[2]]} ${yrStr})`, shortLabel: `${q} ${yrStr}` }
+    }
+  }
+
+  if (months.length === 1) {
+    const yr = calYear(months[0])
+    return { label: `${FY_MONTH_NAMES[months[0]]} ${yr}`, shortLabel: `${FY_MONTH_NAMES[months[0]]} ${yr}` }
+  }
+
+  // Generic multi-month
+  const names = months.map(m => `${FY_MONTH_SHORT[m]} ${calYear(m)}`)
+  const label = names.join(", ")
+  return { label, shortLabel: `${FY_MONTH_SHORT[months[0]]}–${FY_MONTH_SHORT[months[months.length-1]]}` }
+}
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
@@ -59,34 +79,56 @@ export async function GET(req: Request) {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const url   = new URL(req.url)
-  const fy    = (url.searchParams.get("fy") || getCurrentFY()) as FinancialYear
-  const month = Math.max(1, Math.min(12, parseInt(url.searchParams.get("month") || "1", 10)))
+  const url = new URL(req.url)
+  const fy  = (url.searchParams.get("fy") || getCurrentFY()) as FinancialYear
+
+  // Support both ?months=1,2,3 and legacy ?month=1
+  const rawMonths = url.searchParams.get("months") || url.searchParams.get("month") || "1"
+  const selectedMonths = [...new Set(
+    rawMonths.split(",")
+      .map(m => parseInt(m.trim(), 10))
+      .filter(m => !isNaN(m) && m >= 1 && m <= 12)
+  )].sort((a, b) => a - b)
+
+  if (selectedMonths.length === 0) selectedMonths.push(1)
 
   const [allPI, buyers8020, meetingSchedules] = await Promise.all([
     getPIRecords(), get8020Buyers(), getMeetingSchedules(),
   ])
 
-  const fyPI    = filterPIByFY(allPI, fy)
-  const monthPI = getMonthPI(fyPI, fy, month)
+  const fyPI = filterPIByFY(allPI, fy)
+
+  // Collect all calendar month+year combos for the selected FY months
+  const calendarMonths = selectedMonths.map(m => fyMonthToCalendar(m, fy))
+
+  // Filter PI records matching any of the selected months
+  const monthPI = fyPI.filter((r) => {
+    if (r.fyMonthNo > 0) return selectedMonths.includes(r.fyMonthNo)
+    const d = parsePIDate(r.piDate)
+    if (isNaN(d.getTime())) return false
+    return calendarMonths.some(({ month, year }) =>
+      d.getMonth() === month && d.getFullYear() === year
+    )
+  })
 
   const norm = (s: string) => s.toLowerCase().trim()
 
   // ── 80/20 buyer lookup ─────────────────────────────────────────────────────
-  const buyerMap          = new Map(buyers8020.map((b) => [norm(b.buyerName), b]))
+  const buyerMap             = new Map(buyers8020.map((b) => [norm(b.buyerName), b]))
   const monthlyTargetByBuyer = new Map(buyers8020.map((b) => [norm(b.buyerName), b.annualTarget / 12]))
 
-  const monitored = buyers8020.filter((b) => b.tier !== "OTHERS")
-  const totalMonthlyTarget = monitored.reduce((s, b) => s + b.annualTarget / 12, 0)
+  const monitored          = buyers8020.filter((b) => b.tier !== "OTHERS")
+  const perMonthTarget     = monitored.reduce((s, b) => s + b.annualTarget / 12, 0)
+  const totalMonthlyTarget = parseFloat((perMonthTarget * selectedMonths.length).toFixed(2))
 
-  // ── Country target map (from 80/20 buyers) ─────────────────────────────────
+  // ── Country target map ─────────────────────────────────────────────────────
   const countryTargetMap = new Map<string, number>()
   for (const b of monitored) {
     const cKey = b.country.toUpperCase().trim()
-    countryTargetMap.set(cKey, (countryTargetMap.get(cKey) ?? 0) + b.annualTarget / 12)
+    countryTargetMap.set(cKey, (countryTargetMap.get(cKey) ?? 0) + (b.annualTarget / 12) * selectedMonths.length)
   }
 
-  // ── Totals ──────────────────────────────────────────────────────────────────
+  // ── Totals ─────────────────────────────────────────────────────────────────
   const totalContainers = monthPI.reduce((s, r) => s + r.totalContainers, 0)
   const totalMTs        = monthPI.reduce((s, r) => s + r.qtyMTs, 0)
   const totalAmount     = monthPI.reduce((s, r) => s + r.totalAmount, 0)
@@ -162,7 +204,7 @@ export async function GET(req: Request) {
     })
     .sort((a, b) => b.containers - a.containers)
 
-  // ── Sales person breakdown (share%, no targets) ────────────────────────────
+  // ── Sales person breakdown ─────────────────────────────────────────────────
   const spMap = new Map<string, { containers: number; mts: number; amount: number; buyers: Set<string> }>()
   for (const r of monthPI) {
     const sp = r.salesPerson?.toUpperCase().trim() || "—"
@@ -185,7 +227,7 @@ export async function GET(req: Request) {
     }))
     .sort((a, b) => b.mts - a.mts)
 
-  // ── Buyer breakdown (target vs actual) ────────────────────────────────────
+  // ── Buyer breakdown ────────────────────────────────────────────────────────
   const buyerSalesMap = new Map<string, { containers: number; mts: number; amount: number; country: string; sp: string }>()
   for (const r of monthPI) {
     const key = norm(r.buyerCompanyName)
@@ -199,7 +241,7 @@ export async function GET(req: Request) {
   const buyerBreakdown = [...buyerSalesMap.entries()]
     .map(([key, data]) => {
       const b80    = buyerMap.get(key)
-      const target = monthlyTargetByBuyer.get(key) ?? 0
+      const target = (monthlyTargetByBuyer.get(key) ?? 0) * selectedMonths.length
       return {
         buyerName:         key.replace(/\b\w/g, (c) => c.toUpperCase()),
         country:           data.country,
@@ -216,8 +258,7 @@ export async function GET(req: Request) {
     })
     .sort((a, b) => b.containers - a.containers)
 
-  // ── Meetings in this month ─────────────────────────────────────────────────
-  const { month: calMonth, year: calYear } = fyMonthToCalendar(month, fy)
+  // ── Meetings across all selected months ────────────────────────────────────
   const byTierDone: Record<string, number> = { TIER1: 0, TIER2: 0, TIER3: 0 }
   const tierBuyerCount = { TIER1: 0, TIER2: 0, TIER3: 0 }
   for (const b of monitored) {
@@ -225,43 +266,38 @@ export async function GET(req: Request) {
     if (t in tierBuyerCount) tierBuyerCount[t]++
   }
 
-  const meetingRows: Array<{
-    buyerName: string; country: string; tier: string
-    meetingDate: string; completedBy: string; outcome: string; notes: string
-  }> = []
+  // Build a Set of "calYear-calMonth" strings for fast lookup
+  const calMonthSet = new Set(calendarMonths.map(({ month, year }) => `${year}-${month}`))
+
   for (const sched of meetingSchedules) {
     for (const h of sched.history) {
       const d = new Date(h.meetingDate)
       if (isNaN(d.getTime())) continue
-      if (d.getFullYear() === calYear && d.getMonth() === calMonth) {
+      if (calMonthSet.has(`${d.getFullYear()}-${d.getMonth()}`)) {
         const tk = sched.tier as string
         if (tk in byTierDone) byTierDone[tk]++
-        meetingRows.push({
-          buyerName:   sched.buyerName,
-          country:     sched.country,
-          tier:        sched.tier,
-          meetingDate: h.meetingDate,
-          completedBy: h.completedBy,
-          outcome:     h.outcome,
-          notes:       h.notes,
-        })
       }
     }
   }
-  meetingRows.sort((a, b) => b.meetingDate.localeCompare(a.meetingDate))
 
-  const monthName         = FY_MONTH_NAMES[month] || `Month ${month}`
-  const calendarMonthYear = `${monthName} ${calYear}`
+  const { label: calendarMonthYear, shortLabel } = buildPeriodLabel(selectedMonths, fy)
+  const monthName = selectedMonths.length === 1
+    ? (FY_MONTH_NAMES[selectedMonths[0]] || `Month ${selectedMonths[0]}`)
+    : shortLabel
 
   return NextResponse.json({
-    fy, fyMonthNo: month, monthName, calendarMonthYear,
+    fy,
+    selectedMonths,
+    fyMonthNo:         selectedMonths[0],   // backward-compat
+    monthName,
+    calendarMonthYear,
     generatedAt: new Date().toISOString(),
 
     summary: {
       totalContainers:    parseFloat(totalContainers.toFixed(2)),
       totalMTs:           parseFloat(totalMTs.toFixed(2)),
       totalAmount:        parseFloat(totalAmount.toFixed(2)),
-      totalMonthlyTarget: parseFloat(totalMonthlyTarget.toFixed(2)),
+      totalMonthlyTarget,
       achievementPct,
       uniqueBuyers,
       piCount:            monthPI.length,
@@ -275,7 +311,7 @@ export async function GET(req: Request) {
     buyerBreakdown,
 
     meetingsSummary: {
-      totalDone:   meetingRows.length,
+      totalDone:   byTierDone.TIER1 + byTierDone.TIER2 + byTierDone.TIER3,
       totalBuyers: monitored.length,
       byTier: {
         TIER1: { done: byTierDone.TIER1, total: tierBuyerCount.TIER1 },
