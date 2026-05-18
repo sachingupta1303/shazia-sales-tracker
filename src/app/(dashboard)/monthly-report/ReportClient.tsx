@@ -190,6 +190,7 @@ async function generatePDF(data: MonthlyReportData) {
     body: any[][],
     colStyles?: Record<number, object>,
     headFill?: [number, number, number],
+    headText?: [number, number, number],
   ) {
     autoTable(doc, {
       startY: y,
@@ -198,7 +199,7 @@ async function generatePDF(data: MonthlyReportData) {
       body,
       headStyles: {
         fillColor: headFill ?? [5, 150, 105],
-        textColor: 255,
+        textColor: headText ?? [255, 255, 255],
         fontStyle: "bold",
         fontSize: 7,
         lineWidth: 0.25,
@@ -378,6 +379,7 @@ async function generatePDF(data: MonthlyReportData) {
       v.descriptions.map(d => [d.description, fmt(d.containers,1), fmt(d.mts,1), fmtUSD(d.amount)]) as any,
       { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"} },
       [209, 250, 229],
+      [5, 150, 105],
     )
   }
 
