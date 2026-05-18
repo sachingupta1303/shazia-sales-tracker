@@ -150,11 +150,17 @@ async function generatePDF(data: MonthlyReportData) {
   const W = 210, ML = 14, MR = 14
   let y = 0
 
+  // Palette
+  const NAVY:  [number,number,number] = [30,  58,  138]   // blue-900
+  const BLUE:  [number,number,number] = [29,  78,  216]   // blue-700
+  const BLUE2: [number,number,number] = [30,  64,  175]   // blue-800
+  const SKY:   [number,number,number] = [14,  165, 233]   // sky-500
+
   // ── Watermark ──────────────────────────────────────────────────────────────
   function drawWatermark() {
     doc.setFont("helvetica", "bold")
     doc.setFontSize(54)
-    doc.setTextColor(220, 242, 231)
+    doc.setTextColor(219, 234, 254)   // blue-100 — light blue watermark
     doc.text("SHAZIA RICE", 55, 118, { angle: 45 })
     doc.text("SHAZIA RICE", 95, 238, { angle: 45 })
     doc.setTextColor(0, 0, 0)
@@ -170,9 +176,9 @@ async function generatePDF(data: MonthlyReportData) {
   // ── Section header ─────────────────────────────────────────────────────────
   function section(title: string) {
     if (y > 255) newPage()
-    doc.setFillColor(15, 23, 42)
+    doc.setFillColor(...NAVY)
     doc.rect(ML, y, W - ML - MR, 7.5, "F")
-    doc.setFillColor(5, 150, 105)
+    doc.setFillColor(...SKY)
     doc.rect(ML, y, 2.5, 7.5, "F")
     doc.setTextColor(255, 255, 255)
     doc.setFont("helvetica", "bold")
@@ -201,25 +207,25 @@ async function generatePDF(data: MonthlyReportData) {
       body,
       foot,
       headStyles: {
-        fillColor: headFill ?? [5, 150, 105],
+        fillColor: headFill ?? BLUE,
         textColor: headText ?? [255, 255, 255],
         fontStyle: "bold",
         fontSize: 7,
         lineWidth: 0.25,
-        lineColor: [4, 120, 87] as [number,number,number],
+        lineColor: BLUE2 as [number,number,number],
       },
       bodyStyles: {
         fontSize: 7,
         lineWidth: 0.2,
-        lineColor: [226, 232, 240] as [number,number,number],
+        lineColor: [219, 234, 254] as [number,number,number],  // blue-100
       },
       footStyles: {
-        fillColor: [15, 23, 42],
+        fillColor: NAVY,
         textColor: [255, 255, 255],
         fontStyle: "bold",
         fontSize: 7.5,
         lineWidth: 0.25,
-        lineColor: [5, 150, 105] as [number,number,number],
+        lineColor: SKY as [number,number,number],
       },
       alternateRowStyles: { fillColor: [249, 250, 251] },
       tableLineWidth: 0.3,
@@ -256,7 +262,7 @@ async function generatePDF(data: MonthlyReportData) {
     doc.setFontSize(5.8)
     doc.text(label.toUpperCase(), cx + cW / 2, cy + 5, { align: "center" })
     // value
-    doc.setTextColor(15, 23, 42)
+    doc.setTextColor(...NAVY)
     doc.setFont("helvetica", "bold")
     doc.setFontSize(11)
     doc.text(value, cx + cW / 2, cy + 15, { align: "center" })
@@ -304,12 +310,12 @@ async function generatePDF(data: MonthlyReportData) {
   // ── PAGE 1 ─────────────────────────────────────────────────────────────────
   drawWatermark()
 
-  // Header: dark top + emerald main band + accent strip
-  doc.setFillColor(15, 23, 42)
+  // Header: navy top + royal-blue main band + sky accent strip
+  doc.setFillColor(...NAVY)
   doc.rect(0, 0, W, 10, "F")
-  doc.setFillColor(5, 150, 105)
+  doc.setFillColor(...BLUE)
   doc.rect(0, 10, W, 22, "F")
-  doc.setFillColor(4, 120, 87)
+  doc.setFillColor(...BLUE2)
   doc.rect(0, 30, W, 3, "F")
 
   doc.setTextColor(255, 255, 255)
@@ -332,7 +338,7 @@ async function generatePDF(data: MonthlyReportData) {
   // SR logo circle
   doc.setFillColor(255, 255, 255)
   doc.circle(W - MR - 8, 18, 7, "F")
-  doc.setTextColor(5, 150, 105)
+  doc.setTextColor(...BLUE)
   doc.setFont("helvetica", "bold")
   doc.setFontSize(9)
   doc.text("SR", W - MR - 8, 20.2, { align: "center" })
@@ -345,11 +351,11 @@ async function generatePDF(data: MonthlyReportData) {
   const achRgb: [number,number,number] = aPct >= 100 ? [5,150,105] : aPct >= 75 ? [217,119,6] : [220,38,38]
 
   const kpiDefs: Array<{ label:string; value:string; sub:string; rgb:[number,number,number] }> = [
-    { label: "Containers",     value: fmt(s.totalContainers, 1),    sub: `Target: ${fmt(s.totalMonthlyTarget, 1)}`, rgb: [5,150,105]  },
+    { label: "Containers",     value: fmt(s.totalContainers, 1),    sub: `Target: ${fmt(s.totalMonthlyTarget, 1)}`, rgb: BLUE         },
     { label: "Achievement",    value: `${aPct}%`,                    sub: "vs Monthly Target",                       rgb: achRgb       },
-    { label: "Revenue",        value: fmtUSD(s.totalAmount),         sub: `${s.piCount} orders`,                    rgb: [29,78,216]  },
+    { label: "Revenue",        value: fmtUSD(s.totalAmount),         sub: `${s.piCount} orders`,                    rgb: [14,165,233] },
     { label: "Total MTs",      value: fmt(s.totalMTs, 1),            sub: "Metric Tonnes",                           rgb: [124,58,237] },
-    { label: "Markets·Buyers", value: `${s.activeCountries}·${s.uniqueBuyers}`, sub: `${s.activeSalesPersons} SP`, rgb: [71,85,105]  },
+    { label: "Markets·Buyers", value: `${s.activeCountries}·${s.uniqueBuyers}`, sub: `${s.activeSalesPersons} SP`, rgb: NAVY         },
   ]
   const cW = (W - ML - MR - 4 * 2) / 5
   kpiDefs.forEach((k, i) => {
@@ -487,10 +493,10 @@ async function generatePDF(data: MonthlyReportData) {
   const ms = data.meetingsSummary
   const mCardW = (W - ML - MR - 6) / 4
 
-  // Total card (green)
-  doc.setFillColor(5, 150, 105)
+  // Total card (navy blue)
+  doc.setFillColor(...NAVY)
   doc.roundedRect(ML, y, mCardW, 22, 2, 2, "F")
-  doc.setDrawColor(4, 120, 87); doc.setLineWidth(0.3)
+  doc.setDrawColor(...BLUE2); doc.setLineWidth(0.3)
   doc.roundedRect(ML, y, mCardW, 22, 2, 2, "S")
   doc.setTextColor(255, 255, 255)
   doc.setFont("helvetica","bold"); doc.setFontSize(6)
@@ -527,7 +533,7 @@ async function generatePDF(data: MonthlyReportData) {
     doc.setFont("helvetica","bold"); doc.setFontSize(5.5)
     doc.text(label, cx + mCardW / 2, y + 5, { align:"center" })
     // count
-    doc.setTextColor(15, 23, 42)
+    doc.setTextColor(...NAVY)
     doc.setFontSize(14)
     doc.text(String(stat.done), cx + mCardW / 2, y + 14.5, { align:"center" })
     // sub
@@ -541,9 +547,9 @@ async function generatePDF(data: MonthlyReportData) {
   const pages = (doc as any).internal.getNumberOfPages()
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p)
-    doc.setFillColor(15, 23, 42)
+    doc.setFillColor(...NAVY)
     doc.rect(0, 287, W, 10, "F")
-    doc.setFillColor(5, 150, 105)
+    doc.setFillColor(...SKY)
     doc.rect(0, 287, W, 0.8, "F")
     doc.setTextColor(156, 163, 175)
     doc.setFontSize(6)
