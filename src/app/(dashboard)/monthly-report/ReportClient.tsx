@@ -191,12 +191,15 @@ async function generatePDF(data: MonthlyReportData) {
     colStyles?: Record<number, object>,
     headFill?: [number, number, number],
     headText?: [number, number, number],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    foot?: any[][],
   ) {
     autoTable(doc, {
       startY: y,
       margin: { left: ML, right: MR },
       head,
       body,
+      foot,
       headStyles: {
         fillColor: headFill ?? [5, 150, 105],
         textColor: headText ?? [255, 255, 255],
@@ -210,10 +213,19 @@ async function generatePDF(data: MonthlyReportData) {
         lineWidth: 0.2,
         lineColor: [226, 232, 240] as [number,number,number],
       },
+      footStyles: {
+        fillColor: [15, 23, 42],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 7.5,
+        lineWidth: 0.25,
+        lineColor: [5, 150, 105] as [number,number,number],
+      },
       alternateRowStyles: { fillColor: [249, 250, 251] },
       tableLineWidth: 0.3,
       tableLineColor: [203, 213, 225] as [number,number,number],
       columnStyles: colStyles ?? {},
+      showFoot: "lastPage",
     })
     y = (doc as any).lastAutoTable.finalY + 4
   }
@@ -362,11 +374,18 @@ async function generatePDF(data: MonthlyReportData) {
 
   // ── Variety Breakdown ──────────────────────────────────────────────────────
   section("Variety Breakdown")
-  tbl(
-    [["Variety", "Containers", "Metric Tonnes", "Revenue", "Share %"]],
-    data.varietyBreakdown.map(v => [v.variety, fmt(v.containers,1), fmt(v.mts,1), fmtUSD(v.amount), `${v.containersPct}%`]) as any,
-    { 0:{fontStyle:"bold"}, 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"} },
-  )
+  {
+    const totalC = data.varietyBreakdown.reduce((s,v)=>s+v.containers,0)
+    const totalM = data.varietyBreakdown.reduce((s,v)=>s+v.mts,0)
+    const totalA = data.varietyBreakdown.reduce((s,v)=>s+v.amount,0)
+    tbl(
+      [["Variety", "Containers", "Metric Tonnes", "Revenue", "Share %"]],
+      data.varietyBreakdown.map(v => [v.variety, fmt(v.containers,1), fmt(v.mts,1), fmtUSD(v.amount), `${v.containersPct}%`]) as any,
+      { 0:{fontStyle:"bold"}, 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"} },
+      undefined, undefined,
+      [["GRAND TOTAL", fmt(totalC,1), fmt(totalM,1), fmtUSD(totalA), "100%"]],
+    )
+  }
 
   for (const v of data.varietyBreakdown) {
     if (!v.descriptions.length) continue
@@ -380,26 +399,37 @@ async function generatePDF(data: MonthlyReportData) {
       { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"} },
       [209, 250, 229],
       [5, 150, 105],
+      [["TOTAL", fmt(v.containers,1), fmt(v.mts,1), fmtUSD(v.amount)]],
     )
   }
 
   // ── Country Performance ────────────────────────────────────────────────────
   if (y > 220) newPage()
   section("Country Performance")
-  tbl(
-    [["Country","Target (Ctrs)","Actual (Ctrs)","Achievement %","MTs","Revenue","Share %","Buyers"]],
-    data.countryBreakdown.map((c, i) => [
-      `${i+1}. ${c.country}`,
-      c.monthlyTarget > 0 ? fmt(c.monthlyTarget,1) : "—",
-      fmt(c.containers,1),
-      c.monthlyTarget > 0 ? `${c.achievementPct}%` : "—",
-      fmt(c.mts,1),
-      fmtUSD(c.amount),
-      `${c.pct}%`,
-      String(c.buyerCount),
-    ]) as any,
-    { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"}, 7:{halign:"right"} },
-  )
+  {
+    const ctTgt = data.countryBreakdown.reduce((s,c)=>s+c.monthlyTarget,0)
+    const ctAct = data.countryBreakdown.reduce((s,c)=>s+c.containers,0)
+    const ctMts = data.countryBreakdown.reduce((s,c)=>s+c.mts,0)
+    const ctAmt = data.countryBreakdown.reduce((s,c)=>s+c.amount,0)
+    const ctBuy = data.countryBreakdown.reduce((s,c)=>s+c.buyerCount,0)
+    const ctAch = ctTgt > 0 ? parseFloat(((ctAct/ctTgt)*100).toFixed(1)) : 0
+    tbl(
+      [["Country","Target (Ctrs)","Actual (Ctrs)","Achievement %","MTs","Revenue","Share %","Buyers"]],
+      data.countryBreakdown.map((c, i) => [
+        `${i+1}. ${c.country}`,
+        c.monthlyTarget > 0 ? fmt(c.monthlyTarget,1) : "—",
+        fmt(c.containers,1),
+        c.monthlyTarget > 0 ? `${c.achievementPct}%` : "—",
+        fmt(c.mts,1),
+        fmtUSD(c.amount),
+        `${c.pct}%`,
+        String(c.buyerCount),
+      ]) as any,
+      { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"}, 7:{halign:"right"} },
+      undefined, undefined,
+      [["GRAND TOTAL", fmt(ctTgt,1), fmt(ctAct,1), ctTgt>0?`${ctAch}%`:"—", fmt(ctMts,1), fmtUSD(ctAmt), "100%", String(ctBuy)]],
+    )
+  }
 
   // ── Sales Person — Bar Chart + Table ──────────────────────────────────────
   if (y > 200) newPage()
@@ -415,26 +445,41 @@ async function generatePDF(data: MonthlyReportData) {
     )
   }
   if (y > 220) newPage()
-  tbl(
-    [["Sales Person","Containers","MTs","Revenue","Share %","Buyers"]],
-    data.salesPersonBreakdown.map(sp => [sp.salesPerson, fmt(sp.containers,1), fmt(sp.mts,1), fmtUSD(sp.amount), `${sp.share}%`, String(sp.buyerCount)]) as any,
-    { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"} },
-  )
+  {
+    const spC = data.salesPersonBreakdown.reduce((s,sp)=>s+sp.containers,0)
+    const spM = data.salesPersonBreakdown.reduce((s,sp)=>s+sp.mts,0)
+    const spA = data.salesPersonBreakdown.reduce((s,sp)=>s+sp.amount,0)
+    tbl(
+      [["Sales Person","Containers","MTs","Revenue","Share %","Buyers"]],
+      data.salesPersonBreakdown.map(sp => [sp.salesPerson, fmt(sp.containers,1), fmt(sp.mts,1), fmtUSD(sp.amount), `${sp.share}%`, String(sp.buyerCount)]) as any,
+      { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"} },
+      undefined, undefined,
+      [["GRAND TOTAL", fmt(spC,1), fmt(spM,1), fmtUSD(spA), "100%", ""]],
+    )
+  }
 
   // ── Buyers — Target vs Actual ──────────────────────────────────────────────
   if (y > 220) newPage()
   section("Buyers — Target vs Actual")
-  tbl(
-    [["Buyer","Country","Tier","Target/Mo","Actual Ctrs","Achievement %","Revenue"]],
-    data.buyerBreakdown.map(b => [
-      b.buyerName, b.country, b.tier,
-      b.monthlyTarget > 0 ? fmt(b.monthlyTarget,1) : "—",
-      fmt(b.containers,1),
-      b.monthlyTarget > 0 ? `${b.achievementPct}%` : "—",
-      fmtUSD(b.amount),
-    ]) as any,
-    { 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"} },
-  )
+  {
+    const bTgt = data.buyerBreakdown.reduce((s,b)=>s+b.monthlyTarget,0)
+    const bAct = data.buyerBreakdown.reduce((s,b)=>s+b.containers,0)
+    const bAmt = data.buyerBreakdown.reduce((s,b)=>s+b.amount,0)
+    const bAch = bTgt > 0 ? parseFloat(((bAct/bTgt)*100).toFixed(1)) : 0
+    tbl(
+      [["Buyer","Country","Tier","Target/Mo","Actual Ctrs","Achievement %","Revenue"]],
+      data.buyerBreakdown.map(b => [
+        b.buyerName, b.country, b.tier,
+        b.monthlyTarget > 0 ? fmt(b.monthlyTarget,1) : "—",
+        fmt(b.containers,1),
+        b.monthlyTarget > 0 ? `${b.achievementPct}%` : "—",
+        fmtUSD(b.amount),
+      ]) as any,
+      { 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"} },
+      undefined, undefined,
+      [["GRAND TOTAL", "", "", fmt(bTgt,1), fmt(bAct,1), bTgt>0?`${bAch}%`:"—", fmtUSD(bAmt)]],
+    )
+  }
 
   // ── Meetings ───────────────────────────────────────────────────────────────
   if (y > 245) newPage()
