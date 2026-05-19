@@ -17,12 +17,8 @@ import { APP_BASE_URL } from "@/lib/mailer"
 const TEST_EMAIL = "research@shaziarice.com"
 const TEST_NAME  = "Shazia (Test)"
 
-export async function GET(req: Request) {
-  const secret = process.env.CRON_SECRET ?? ""
-  const auth   = req.headers.get("authorization") ?? ""
-  if (secret && auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+export async function GET(_req: Request) {
+  // Temp test endpoint — always open, only ever sends to research@shaziarice.com
 
   // 1. Fetch meetings & filter eligible
   const all      = await getMeetingSchedules()
