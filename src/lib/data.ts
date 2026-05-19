@@ -1658,6 +1658,22 @@ function uniqueId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+/** Returns current time as a human-readable IST string for sheet storage.
+ *  e.g. "19/05/2026, 11:52:00 AM" (Asia/Kolkata)
+ */
+function nowIST(): string {
+  return new Date().toLocaleString("en-IN", {
+    timeZone:   "Asia/Kolkata",
+    day:        "2-digit",
+    month:      "2-digit",
+    year:       "numeric",
+    hour:       "2-digit",
+    minute:     "2-digit",
+    second:     "2-digit",
+    hour12:     true,
+  })
+}
+
 interface MeetingScheduleRow {
   id: string
   buyerName: string
@@ -1815,7 +1831,7 @@ async function updateMeetingScheduleRow(
   set("Last Meeting Date",  updates.lastMeetingDate)
   set("Next Due Date",      updates.nextDueDate)
   set("Meeting Remarks",    updates.meetingRemarks)
-  set("Updated At",         updates.updatedAt ?? new Date().toISOString())
+  set("Updated At",         updates.updatedAt ?? nowIST())
 
   await updateSheetRow(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020, rowIdx, row)
   invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_SCHEDULE_8020)
@@ -1828,7 +1844,7 @@ export async function addMeetingHistoryEntry(entry: {
 }): Promise<string> {
   await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, HISTORY_HEADERS)
   const id = uniqueId("h")
-  const createdAt = new Date().toISOString()
+  const createdAt = nowIST()
   await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.MEETING_HISTORY_8020, [[
     id, entry.meetingId, entry.buyerName, entry.country,
     entry.meetingDate, entry.completedBy, entry.outcome ?? "OTHER", entry.notes, createdAt,
@@ -1876,7 +1892,7 @@ export async function addAlertLogEntry(entry: {
 }): Promise<string> {
   await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.ALERT_LOG_8020, ALERT_HEADERS)
   const id = uniqueId("a")
-  const createdAt = new Date().toISOString()
+  const createdAt = nowIST()
   await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.ALERT_LOG_8020, [[
     id, entry.meetingId, entry.buyerName,
     entry.alertDate, entry.emailTo, entry.status, createdAt,
@@ -2104,7 +2120,7 @@ export async function completeMeeting(params: {
     lastMeetingDate: params.meetingDate,
     nextDueDate:     nextDue,
     meetingRemarks:  params.notes || target.meetingRemarks,
-    updatedAt:       new Date().toISOString(),
+    updatedAt:       nowIST(),
   })
   if (!updated) {
     // Row didn't exist yet (e.g. user clicked Done before the auto-bootstrap row was
@@ -2116,7 +2132,7 @@ export async function completeMeeting(params: {
       lastMeetingDate: params.meetingDate,
       nextDueDate:     nextDue,
       meetingRemarks:  params.notes || target.meetingRemarks,
-      updatedAt:       new Date().toISOString(),
+      updatedAt:       nowIST(),
     }])
   }
   await addMeetingHistoryEntry({
@@ -2240,8 +2256,8 @@ export async function undoLastMeeting(params: {
 // ─── Reschedule Meeting ───────────────────────────────────────────────────────
 
 /**
- * Update only the Next Due Date for a meeting (reschedule).
- * Does NOT touch history — just moves the due date forward.
+ * Reschedule a meeting: update the Next Due Date + log a RESCHEDULED history entry.
+ * Does NOT mark the meeting as completed — just moves the due date forward.
  */
 export async function rescheduleMeeting(params: {
   meetingId:  string
@@ -2249,12 +2265,36 @@ export async function rescheduleMeeting(params: {
   remarks?:   string
 }): Promise<{ ok: boolean; error?: string }> {
   try {
+    // Fetch meeting info (needed for buyer name / country in history)
+    const all    = await getMeetingSchedules()
+    const target = all.find((m) => m.id === params.meetingId)
+    if (!target) return { ok: false, error: "Meeting not found" }
+
+    const notes = [
+      params.remarks ? params.remarks : "",
+      `(Previous due date: ${target.nextDueDate})`,
+    ].filter(Boolean).join(" — ")
+
+    // 1. Update the schedule row
     const ok = await updateMeetingScheduleRow(params.meetingId, {
       nextDueDate:    params.newDueDate,
-      meetingRemarks: params.remarks ?? "",
-      updatedAt:      new Date().toISOString(),
+      meetingRemarks: params.remarks ?? target.meetingRemarks,
+      updatedAt:      nowIST(),
     })
-    if (!ok) return { ok: false, error: "Meeting not found" }
+    if (!ok) return { ok: false, error: "Row update failed" }
+
+    // 2. Append a RESCHEDULED entry to history (audit trail)
+    await addMeetingHistoryEntry({
+      meetingId:   params.meetingId,
+      buyerName:   target.buyerName,
+      country:     target.country,
+      meetingDate: params.newDueDate,       // new due date stored as "meeting date"
+      completedBy: "Rescheduled via email",
+      outcome:     "RESCHEDULED",
+      notes,
+    })
+
+    invalidateMemo("meeting_schedules", "others_buyers")
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Unknown error" }
