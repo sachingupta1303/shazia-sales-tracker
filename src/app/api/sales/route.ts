@@ -76,10 +76,20 @@ export async function GET(req: Request) {
     return true
   })
 
-  // ── Sort by PI date ───────────────────────────────────────────────────────
+  // ── Sort by PI date (desc default) — NaN dates pushed to bottom ──────────
   filtered.sort((a, b) => {
     const da = parsePIDate(a.piDate).getTime()
     const db = parsePIDate(b.piDate).getTime()
+    const aOk = !isNaN(da), bOk = !isNaN(db)
+    if (!aOk && !bOk) return 0
+    if (!aOk) return 1    // invalid date → bottom
+    if (!bOk) return -1   // invalid date → bottom
+    if (da === db) {
+      // secondary: piNumber desc
+      return sortDir === "desc"
+        ? Number(b.piNumber) - Number(a.piNumber)
+        : Number(a.piNumber) - Number(b.piNumber)
+    }
     return sortDir === "desc" ? db - da : da - db
   })
 
