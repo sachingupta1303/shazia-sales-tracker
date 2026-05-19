@@ -126,13 +126,14 @@ export function parsePIDate(dateStr: string): Date {
   if (!dateStr || !dateStr.trim()) return new Date(NaN)
   const s = dateStr.trim()
 
-  // "15 May 2026" or "May 15 2026" — most common from Google Sheets
+  // "15 May 2026" or "15 JUNE 2026"
   const wordsMatch = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/)
   if (wordsMatch) {
     const [, d, mon, y] = wordsMatch
     const m = MONTH_MAP[mon.slice(0, 3).toLowerCase()]
     if (m !== undefined) return new Date(Number(y), m, Number(d))
   }
+  // "May 15 2026"
   const wordsMatch2 = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2})\s+(\d{4})$/)
   if (wordsMatch2) {
     const [, mon, d, y] = wordsMatch2
@@ -143,25 +144,29 @@ export function parsePIDate(dateStr: string): Date {
   // YYYY-MM-DD (ISO)
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s)
 
-  // Slash-separated: detect DD/MM/YYYY vs MM/DD/YYYY by day > 12
+  // DD-MM-YYYY (common Indian format with dashes, e.g. "15-04-2026")
+  const dashMatch = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/)
+  if (dashMatch) {
+    const [, d, mo, y] = dashMatch.map(Number)
+    return new Date(y, mo - 1, d)
+  }
+
+  // Slash-separated DD/MM/YYYY or MM/DD/YYYY
   if (s.includes("/")) {
     const parts = s.split("/")
     if (parts.length === 3) {
       const [a, b, c] = parts.map(Number)
       if (c > 31) {
-        // c = year, so format is either DD/MM/YYYY or MM/DD/YYYY
-        // If a > 12, definitely DD/MM/YYYY
-        if (a > 12) return new Date(c, b - 1, a)  // DD/MM/YYYY
-        // Ambiguous — default to DD/MM/YYYY (Indian date format)
+        // c = year — treat as DD/MM/YYYY (Indian default)
         return new Date(c, b - 1, a)
       }
-      // a = year (YYYY format first two parts would be larger)
       return new Date(a, b - 1, c)
     }
   }
 
   // Fallback to native parser
-  return new Date(s)
+  const native = new Date(s)
+  return native
 }
 
 export function isInFY(date: Date, fy: FinancialYear): boolean {

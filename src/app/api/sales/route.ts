@@ -76,21 +76,21 @@ export async function GET(req: Request) {
     return true
   })
 
-  // ── Sort by PI date (desc default) — NaN dates pushed to bottom ──────────
+  // ── Sort by piDate desc; piNumber as fallback when date unparseable ───────
   filtered.sort((a, b) => {
     const da = parsePIDate(a.piDate).getTime()
     const db = parsePIDate(b.piDate).getTime()
     const aOk = !isNaN(da), bOk = !isNaN(db)
-    if (!aOk && !bOk) return 0
-    if (!aOk) return 1    // invalid date → bottom
-    if (!bOk) return -1   // invalid date → bottom
-    if (da === db) {
-      // secondary: piNumber desc
+    if (aOk && bOk) {
+      if (da !== db) return sortDir === "desc" ? db - da : da - db
       return sortDir === "desc"
         ? Number(b.piNumber) - Number(a.piNumber)
         : Number(a.piNumber) - Number(b.piNumber)
     }
-    return sortDir === "desc" ? db - da : da - db
+    // unparseable date → use piNumber as recency proxy
+    const na = Number(a.piNumber) || 0
+    const nb = Number(b.piNumber) || 0
+    return sortDir === "desc" ? nb - na : na - nb
   })
 
   // ── Aggregate summary ─────────────────────────────────────────────────────
