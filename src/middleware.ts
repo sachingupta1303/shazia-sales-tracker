@@ -11,6 +11,7 @@ const PUBLIC_PREFIXES = [
   "/api/8020/meetings/",                 // reschedule API — token-auth inside route
   "/api/8020/cron-batch",               // cron endpoint — auth handled inside route (Bearer token)
   "/api/8020/send-test-to-owner",       // temp test endpoint — auth handled inside route
+  "/api/8020/test-send-both",           // temp test endpoint — bearer auth inside route
   "/api/debug",                          // SMTP debug
 ]
 
