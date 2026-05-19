@@ -69,25 +69,25 @@ export async function sendConsolidatedEmail(params: {
 
     const respCell = `<td style="padding:10px 10px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
 
+    const BTN = `display:inline-block;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;text-decoration:none;line-height:1.5;`
+
     const doneBtn = m.doneUrl
       ? `<a href="${esc(m.doneUrl)}" target="_blank" rel="noopener"
-             style="display:inline-block;padding:5px 12px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
-             ✓ Done
-           </a>`
+             style="${BTN}background:#16a34a;color:#fff;">✓ Done</a>`
       : `<span style="color:#9ca3af;font-size:12px">—</span>`
 
     const rescheduleBtn = m.rescheduleUrl
       ? `<a href="${esc(m.rescheduleUrl)}" target="_blank" rel="noopener"
-             style="display:inline-block;padding:5px 12px;background:#ea580c;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;margin-top:4px">
-             📅 Reschedule
-           </a>`
+             style="${BTN}background:#ea580c;color:#fff;">📅 Reschedule</a>`
       : ""
 
-    const doneCell = `<td style="padding:8px 12px;text-align:center;border-bottom:1px solid #f3f4f6;vertical-align:middle">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          ${doneBtn}
-          ${rescheduleBtn}
-        </div>
+    const doneCell = `<td style="padding:8px 14px;text-align:center;border-bottom:1px solid #f3f4f6;vertical-align:middle">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto">
+          <tr>
+            <td style="padding-right:6px">${doneBtn}</td>
+            <td>${rescheduleBtn}</td>
+          </tr>
+        </table>
       </td>`
 
     return `
