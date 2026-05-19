@@ -25,13 +25,21 @@ export function MeetingDoneClient({
   const [error,  setError]  = useState("")
   const [nextDue, setNextDue] = useState("")
 
-  const overdue = initial.daysRemaining < 0
-  const accent  = overdue ? "border-red-400 bg-red-50" : "border-amber-400 bg-amber-50"
+  const overdue    = initial.daysRemaining < 0
   const statusText = overdue
-    ? `⚠️ Overdue by ${Math.abs(initial.daysRemaining)} days`
+    ? `Overdue by ${Math.abs(initial.daysRemaining)} day${Math.abs(initial.daysRemaining) === 1 ? "" : "s"}`
     : initial.daysRemaining === 0
-      ? "🔔 Due Today"
-      : `⏰ Due in ${initial.daysRemaining} days`
+      ? "Due Today"
+      : `Due in ${initial.daysRemaining} day${initial.daysRemaining === 1 ? "" : "s"}`
+  const statusColor = overdue ? "text-red-600" : "text-amber-600"
+  const statusBg    = overdue ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"
+
+  const tierLabel = TIER_LABEL[initial.tier] ?? initial.tier
+  const tierColor = initial.tier === "TIER1"
+    ? "bg-purple-100 text-purple-700"
+    : initial.tier === "TIER2"
+      ? "bg-blue-100 text-blue-700"
+      : "bg-gray-100 text-gray-600"
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -63,79 +71,91 @@ export function MeetingDoneClient({
     }
   }
 
+  /* ── Success screen ─────────────────────────────────────────────────────── */
   if (stage === "done") {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-green-200 overflow-hidden">
-          <div className="bg-green-600 px-6 py-5 text-white text-center">
-            <div className="text-4xl mb-2">✓</div>
-            <h1 className="text-xl font-bold">Meeting Done & Saved!</h1>
-            <p className="text-sm text-green-100 mt-1">{initial.buyerName}</p>
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+
+          {/* Green header */}
+          <div className="bg-green-600 px-6 py-5">
+            <p className="text-white/70 text-xs font-bold uppercase tracking-wider">80/20 Key Account · Done</p>
+            <h1 className="text-white text-xl font-bold mt-1">✓ Meeting Recorded!</h1>
+            <p className="text-white/80 text-sm mt-0.5">{initial.buyerName} · {initial.country}</p>
           </div>
-          <div className="p-6 space-y-4 text-center">
+
+          <div className="p-6 space-y-4">
             {nextDue && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
-                <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide mb-1">Next Meeting Due</p>
-                <p className="text-lg font-bold text-blue-900">{formatDate(nextDue)}</p>
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-center">
+                <p className="text-xs text-green-600 font-bold uppercase tracking-wide mb-1">Next Meeting Due</p>
+                <p className="text-base font-bold text-green-900">{formatDate(nextDue)}</p>
               </div>
             )}
             {notes && (
-              <div className="bg-gray-50 rounded-xl px-4 py-3 text-left">
-                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">Remarks Saved</p>
+              <div className="bg-gray-50 rounded-xl px-4 py-3">
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wide mb-1">Remarks Saved</p>
                 <p className="text-sm text-gray-700 leading-relaxed">{notes}</p>
               </div>
             )}
-            <p className="text-xs text-gray-400">You can close this tab. Meeting has been recorded.</p>
-            <p className="text-xs text-gray-300">Shazia Rice · 80/20 Key Account System</p>
+            <p className="text-xs text-center text-gray-400">You can close this tab. Meeting has been recorded.</p>
+            <p className="text-xs text-center text-gray-300">Shazia Rice · 80/20 Key Account System</p>
           </div>
         </div>
       </div>
     )
   }
 
+  /* ── Form screen ─────────────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-lg mx-auto space-y-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
 
-        {/* Header */}
-        <div className="text-center">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">
-            Shazia Rice · 80/20 Key Account System
-          </p>
-          <h1 className="text-2xl font-bold text-gray-900">Mark Meeting as Done</h1>
+        {/* Green header */}
+        <div className="bg-green-600 px-6 py-5">
+          <p className="text-white/70 text-xs font-bold uppercase tracking-wider">80/20 Key Account · Mark Done</p>
+          <h1 className="text-white text-xl font-bold mt-1">✓ Mark Meeting as Done</h1>
+          <p className="text-white/80 text-sm mt-0.5">{initial.buyerName} · {initial.country}</p>
         </div>
 
-        {/* Meeting card */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className={`px-5 py-4 border-b ${accent}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">{initial.buyerName}</h2>
-                <p className="text-sm text-gray-500">{initial.country}</p>
-              </div>
-              <span className="text-xs font-semibold bg-white border border-gray-200 px-2 py-1 rounded-full text-gray-700">
-                {TIER_LABEL[initial.tier] ?? initial.tier}
-              </span>
+        <div className="p-6 space-y-5">
+
+          {/* Buyer info */}
+          <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Tier</span>
+              <span className={`font-bold text-xs px-2.5 py-1 rounded-full ${tierColor}`}>{tierLabel}</span>
             </div>
-            <p className="text-sm font-semibold mt-2 text-gray-800">{statusText}</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Scheduled: <strong>{formatDate(initial.nextDueDate)}</strong>
-            </p>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Scheduled Date</span>
+              <span className={`font-semibold ${statusColor}`}>{formatDate(initial.nextDueDate)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Status</span>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${statusBg}`}>{statusText}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Responsible</span>
+              <span className="font-semibold text-gray-800">{initial.responsiblePerson || "—"}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Coordinator</span>
+              <span className="font-semibold text-gray-800">{initial.salesCoordinator || "—"}</span>
+            </div>
           </div>
 
           {/* Performance */}
-          <div className="px-5 py-3 grid grid-cols-3 gap-3 border-b border-gray-100 text-center">
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Target</p>
-              <p className="text-base font-bold text-gray-900">{fmt(initial.target)}</p>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="bg-gray-50 rounded-xl py-3">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">Target</p>
+              <p className="text-base font-bold text-gray-900 mt-0.5">{fmt(initial.target)}</p>
             </div>
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Actual</p>
-              <p className="text-base font-bold text-gray-900">{fmt(initial.actual)}</p>
+            <div className="bg-gray-50 rounded-xl py-3">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">Actual</p>
+              <p className="text-base font-bold text-gray-900 mt-0.5">{fmt(initial.actual)}</p>
             </div>
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">ACH%</p>
-              <p className={`text-base font-bold ${
+            <div className="bg-gray-50 rounded-xl py-3">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">ACH%</p>
+              <p className={`text-base font-bold mt-0.5 ${
                 initial.achievementPct >= 100 ? "text-green-600"
                 : initial.achievementPct >= 70  ? "text-amber-600"
                 : "text-red-600"
@@ -143,47 +163,39 @@ export function MeetingDoneClient({
             </div>
           </div>
 
-          <div className="px-5 py-3 text-xs text-gray-500 grid grid-cols-2 gap-1">
-            <span>Responsible: <strong className="text-gray-700">{initial.responsiblePerson || "—"}</strong></span>
-            <span>Coordinator: <strong className="text-gray-700">{initial.salesCoordinator || "—"}</strong></span>
-          </div>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-5">
-
           {/* Remarks */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Remarks <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-              placeholder="e.g. Meeting done. Discussed Q3 pricing. Buyer confirmed 3 containers. PI to be sent by Friday."
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-              {error}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2">
+                Remarks / Notes <span className="normal-case font-normal text-gray-400">(optional)</span>
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                placeholder="e.g. Meeting done. Discussed Q3 pricing. Buyer confirmed 3 containers..."
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-3.5 text-sm font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
-          >
-            {saving ? "Saving…" : "✓ Mark as Done & Save"}
-          </button>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{error}</div>
+            )}
 
-          <p className="text-[11px] text-gray-400 text-center">
-            No login required. You can use this link multiple times to update remarks.
-          </p>
-        </form>
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full py-3 rounded-xl font-bold text-white text-sm transition-all disabled:opacity-50"
+              style={{ background: saving ? "#16a34a99" : "#16a34a" }}
+            >
+              {saving ? "Saving…" : "✓ Mark as Done & Save"}
+            </button>
+
+            <p className="text-xs text-center text-gray-400">
+              No login required. You can use this link multiple times to update remarks.
+            </p>
+          </form>
+        </div>
       </div>
     </div>
   )
