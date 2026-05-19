@@ -18,6 +18,7 @@ export interface ConsolidatedMeetingRow {
   daysRemaining:     number
   displayStatus:     "OVERDUE" | "DUE_SOON"
   doneUrl?:          string   // magic link for Done button
+  rescheduleUrl?:    string   // magic link for Reschedule button
 }
 
 export async function sendConsolidatedEmail(params: {
@@ -68,14 +69,25 @@ export async function sendConsolidatedEmail(params: {
 
     const respCell = `<td style="padding:10px 10px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;white-space:nowrap">${esc(m.responsiblePerson || "—")}</td>`
 
-    const doneCell = `<td style="padding:10px 12px;text-align:center;border-bottom:1px solid #f3f4f6">
-        ${m.doneUrl
-          ? `<a href="${esc(m.doneUrl)}" target="_blank" rel="noopener"
-               style="display:inline-block;padding:6px 14px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
-               ✓ Done
-             </a>`
-          : `<span style="color:#9ca3af;font-size:12px">—</span>`
-        }
+    const doneBtn = m.doneUrl
+      ? `<a href="${esc(m.doneUrl)}" target="_blank" rel="noopener"
+             style="display:inline-block;padding:5px 12px;background:#16a34a;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap">
+             ✓ Done
+           </a>`
+      : `<span style="color:#9ca3af;font-size:12px">—</span>`
+
+    const rescheduleBtn = m.rescheduleUrl
+      ? `<a href="${esc(m.rescheduleUrl)}" target="_blank" rel="noopener"
+             style="display:inline-block;padding:5px 12px;background:#ea580c;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;font-weight:700;white-space:nowrap;margin-top:4px">
+             📅 Reschedule
+           </a>`
+      : ""
+
+    const doneCell = `<td style="padding:8px 12px;text-align:center;border-bottom:1px solid #f3f4f6;vertical-align:middle">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          ${doneBtn}
+          ${rescheduleBtn}
+        </div>
       </td>`
 
     return `
@@ -137,7 +149,8 @@ export async function sendConsolidatedEmail(params: {
   const noteBox = `<tr><td style="padding:16px 28px 0">
        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px">
          <p style="margin:0;font-size:13px;color:#166534;line-height:1.6">
-           <strong>Action:</strong> Once a meeting is done, click <strong>✓ Done</strong> next to the buyer, add your remarks and save. No login required.
+           <strong>✓ Done:</strong> Meeting completed? Click <strong>✓ Done</strong>, add remarks and save.<br>
+           <strong>📅 Reschedule:</strong> Need to push the date? Click <strong>📅 Reschedule</strong>, pick a new date and confirm. No login required.
          </p>
        </div>
      </td></tr>`
