@@ -152,11 +152,13 @@ export async function runReminderBatch(opts: {
     if (sentTodayEmails.has(email)) continue   // already sent today
 
     const rows: ConsolidatedMeetingRow[] = await Promise.all(mList.map(async m => {
-      let doneUrl: string | undefined
+      let doneUrl:        string | undefined
+      let rescheduleUrl:  string | undefined
       try {
-        const token = await createDoneToken(m.id, m.buyerName)
-        doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
-      } catch { /* fallback — no button */ }
+        const token   = await createDoneToken(m.id, m.buyerName)
+        doneUrl       = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
+        rescheduleUrl = `${APP_BASE_URL}/meeting-reschedule/${encodeURIComponent(m.id)}?token=${token}`
+      } catch { /* fallback — no buttons */ }
       return {
         meetingId:         m.id,
         buyerName:         m.buyerName,
@@ -167,6 +169,7 @@ export async function runReminderBatch(opts: {
         daysRemaining:     m.daysRemaining,
         displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
         doneUrl,
+        rescheduleUrl,
       }
     }))
 
@@ -202,11 +205,13 @@ export async function runReminderBatch(opts: {
     if (sentTodayEmails.has(email)) continue
 
     const rows: ConsolidatedMeetingRow[] = await Promise.all(mList.map(async m => {
-      let doneUrl: string | undefined
+      let doneUrl:        string | undefined
+      let rescheduleUrl:  string | undefined
       try {
-        const token = await createDoneToken(m.id, m.buyerName)
-        doneUrl = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
-      } catch { /* fallback — no button */ }
+        const token   = await createDoneToken(m.id, m.buyerName)
+        doneUrl       = `${APP_BASE_URL}/meeting-done/${encodeURIComponent(m.id)}?token=${token}`
+        rescheduleUrl = `${APP_BASE_URL}/meeting-reschedule/${encodeURIComponent(m.id)}?token=${token}`
+      } catch { /* fallback — no buttons */ }
       return {
         meetingId:         m.id,
         buyerName:         m.buyerName,
@@ -217,6 +222,7 @@ export async function runReminderBatch(opts: {
         daysRemaining:     m.daysRemaining,
         displayStatus:     m.displayStatus as "OVERDUE" | "DUE_SOON",
         doneUrl,
+        rescheduleUrl,
       }
     }))
 

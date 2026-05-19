@@ -2237,6 +2237,30 @@ export async function undoLastMeeting(params: {
   }
 }
 
+// ─── Reschedule Meeting ───────────────────────────────────────────────────────
+
+/**
+ * Update only the Next Due Date for a meeting (reschedule).
+ * Does NOT touch history — just moves the due date forward.
+ */
+export async function rescheduleMeeting(params: {
+  meetingId:  string
+  newDueDate: string   // YYYY-MM-DD
+  remarks?:   string
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const ok = await updateMeetingScheduleRow(params.meetingId, {
+      nextDueDate:    params.newDueDate,
+      meetingRemarks: params.remarks ?? "",
+      updatedAt:      new Date().toISOString(),
+    })
+    if (!ok) return { ok: false, error: "Meeting not found" }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Unknown error" }
+  }
+}
+
 // ─── Magic-Link Done Tokens ───────────────────────────────────────────────────
 // Stored in MEETING_DONE_TOKENS sheet (auto-created in SALES_TRACKING).
 // Columns: TOKEN | MEETING_ID | BUYER_NAME | EXPIRES_AT | USED | CREATED_AT
