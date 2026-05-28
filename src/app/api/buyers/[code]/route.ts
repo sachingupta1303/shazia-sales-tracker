@@ -4,6 +4,7 @@ import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   getCanonicalBuyers, getBuyerAliasMap,
   filterPIByFY, getMeetingComplianceForBuyer, get8020Buyers,
+  getCountryStrategies,
 } from "@/lib/data"
 import { calcHealthScore } from "@/lib/health-score"
 import {
@@ -36,13 +37,14 @@ export async function GET(
   const previousFY  = getPreviousFY(currentFY)
   const currentWeek = getCurrentFYWeek()
 
-  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap, buyers8020] = await Promise.all([
+  const [allPI, targets, buyerMaster, canonicalBuyers, aliasMap, buyers8020, countryStrategies] = await Promise.all([
     getPIRecords(),
     getTargetRecords(),
     getBuyerMaster(),
     getCanonicalBuyers(),
     getBuyerAliasMap(),
     get8020Buyers(),
+    getCountryStrategies(),
   ])
 
   const currentPI  = filterPIByFY(allPI, currentFY)
@@ -57,6 +59,10 @@ export async function GET(
     if (!c && r.buyerCode) {
       const cb = canonicalBuyers.find((x) => x.buyerCode === r.buyerCode)
       if (cb) c = cb.canonicalBuyerCode
+    }
+    // Fallback: if canonical buyer found, match PI records by canonical name
+    if (!c && canonical && normName(r.buyerCompanyName) === normName(canonical.canonicalBuyerName)) {
+      c = code
     }
     return c ?? makeCode(r.buyerCompanyName)
   }
@@ -129,6 +135,21 @@ export async function GET(
     ? Math.floor((Date.now() - new Date(lastOrderDate).getTime()) / (86_400_000 * 7))
     : 99
 
+  // Country strategy flags
+  const isDreamMap = new Map(countryStrategies.map((s) => [s.country.toUpperCase(), s.isDreamMarket]))
+  const countryVal = canonical?.country || bm?.countries || matchedAllPI[0]?.countries || ""
+
+  // Sales coordinator — canonical sheet > buyer master > PI records
+  const salesCoordinator =
+    canonical?.salesCoordinator ||
+    bm?.salesCoordinator ||
+    matchedAllPI[0]?.salesCoordinator ||
+    ""
+
+  // New buyer flag: no PI before FY2026 start
+  const cutOff = "2026-04-01"
+  const isNewBuyer = matchedAllPI.every((r) => r.piDate >= cutOff)
+
   // Tier from "80/20 Buyers" sheet — T1→TIER1, T2→TIER2, T3→TIER3, Others/not in sheet→OTHERS
   const sheetBuyer = buyers8020.find((b) => b.buyerName.toLowerCase().trim() === displayName.toLowerCase().trim())
   const tier: BuyerTier =
@@ -152,13 +173,16 @@ export async function GET(
     canonicalBuyerCode: code,
     canonicalBuyerName: displayName,
     buyerCode:          canonical?.buyerCode || bm?.buyerCode || matchedAllPI[0]?.buyerCode || "",
-    country:            canonical?.country || bm?.countries || matchedAllPI[0]?.countries || "",
+    country:            countryVal,
     segment:           (canonical?.segment ?? "EXISTING") as BuyerSegment,
     tier,
     strategicRank:      canonical?.strategicRank ?? 999,
     isKeyAccount:       canonical?.isKeyAccount ?? false,
     primaryOwner:       canonical?.primaryOwner || sp,
     backupOwner:        canonical?.backupOwner ?? "",
+    salesCoordinator,
+    isDreamMarket:      isDreamMap.get(countryVal.toUpperCase()) ?? false,
+    isNewBuyer,
     target,
     prevYearActual:     prevActual,
     actual,
