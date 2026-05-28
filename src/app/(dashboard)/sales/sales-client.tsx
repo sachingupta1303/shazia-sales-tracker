@@ -66,8 +66,11 @@ export function SalesClient({ userRole, salesPerson }: Props) {
   const [error,       setError]       = useState("")
   const [filters,     setFilters]     = useState<FilterState>({})
   const [page,        setPage]        = useState(1)
+  const [piPage,      setPiPage]      = useState(1)
   const [expandedPIs, setExpandedPIs] = useState<Set<string>>(new Set())
   const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  const PI_PER_PAGE = 10
 
   const togglePI = (pi: string) =>
     setExpandedPIs(prev => {
@@ -76,8 +79,8 @@ export function SalesClient({ userRole, salesPerson }: Props) {
       return next
     })
 
-  // Reset expanded rows whenever the dataset changes
-  useEffect(() => { setExpandedPIs(new Set()) }, [data])
+  // Reset expanded rows and PI page whenever the dataset changes
+  useEffect(() => { setExpandedPIs(new Set()); setPiPage(1) }, [data])
 
   const fetchData = useCallback(async (f: FilterState, p: number) => {
     setLoading(true)
