@@ -22,6 +22,32 @@ function makeCode(name: string) {
   return "raw_" + name.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40)
 }
 
+// Strip common business suffixes before comparing names
+function stripSuffix(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\b(llc|ltd|co|corp|inc|pvt|private|limited|company|trading|group|international|intl|fze|fzc|est|establishment|enterprises|enterprise|brothers|bro|sons|industries|ind|import|export|foods|food|rice|general|gen)\b/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+// Returns true when two buyer names are clearly about the same entity
+function namesSimilar(a: string, b: string): boolean {
+  const na = stripSuffix(a)
+  const nb = stripSuffix(b)
+  if (!na || !nb) return false
+  if (na === nb) return true
+  // Containment: "HARIB" is contained in "HARIB RICE CO LLC"
+  if (na.includes(nb) || nb.includes(na)) return true
+  // Word-overlap: ≥50% of the shorter name's meaningful words appear in the other
+  const wordsA = new Set(na.split(" ").filter((w) => w.length >= 3))
+  const wordsB = nb.split(" ").filter((w) => w.length >= 3)
+  if (!wordsA.size || !wordsB.length) return false
+  const common = wordsB.filter((w) => wordsA.has(w)).length
+  return common >= Math.max(1, Math.floor(Math.min(wordsA.size, wordsB.length) * 0.5))
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ code: string }> }
@@ -54,15 +80,30 @@ export async function GET(
   const canonical = canonicalBuyers.find((c) => c.canonicalBuyerCode === code)
 
   // Find all PI records belonging to this canonical code
-  const resolveCode = (r: { buyerCompanyName: string; buyerCode: string }) => {
+  const resolveCode = (r: { buyerCompanyName: string; buyerCode: string; countries?: string }) => {
+    // 1. Alias map (exact normalised name)
     let c = aliasMap.get(normName(r.buyerCompanyName))
+    // 2. Buyer-code lookup in canonical map
     if (!c && r.buyerCode) {
       const cb = canonicalBuyers.find((x) => x.buyerCode === r.buyerCode)
       if (cb) c = cb.canonicalBuyerCode
     }
-    // Fallback: if canonical buyer found, match PI records by canonical name
-    if (!c && canonical && normName(r.buyerCompanyName) === normName(canonical.canonicalBuyerName)) {
-      c = code
+    if (!c && canonical) {
+      // 3. Exact canonical name match
+      if (normName(r.buyerCompanyName) === normName(canonical.canonicalBuyerName)) {
+        c = code
+      }
+      // 4. Fuzzy name match — also require country to match to avoid false positives
+      if (!c && canonical.country && r.countries) {
+        const sameCountry = r.countries.toUpperCase().trim() === canonical.country.toUpperCase().trim()
+        if (sameCountry && namesSimilar(r.buyerCompanyName, canonical.canonicalBuyerName)) {
+          c = code
+        }
+      }
+      // 5. Fuzzy name match without country (last resort — no other PI had country set)
+      if (!c && !canonical.country && namesSimilar(r.buyerCompanyName, canonical.canonicalBuyerName)) {
+        c = code
+      }
     }
     return c ?? makeCode(r.buyerCompanyName)
   }
@@ -106,9 +147,13 @@ export async function GET(
   const prevActual = matchedPreviousPI.reduce((s, r) => s + r.totalContainers, 0)
   const orderCount = matchedCurrentPI.length
 
-  // Target — currentFY (80/20 Buyers sheet → always currentFY after getTargetRecords fix)
+  // Target — currentFY: exact name first, fuzzy name fallback
   const tgtActive = targets
-    .filter((t) => t.financialYear === currentFY && normName(t.buyerCompanyName) === normName(displayName))
+    .filter((t) => {
+      if (t.financialYear !== currentFY) return false
+      if (normName(t.buyerCompanyName) === normName(displayName)) return true
+      return namesSimilar(t.buyerCompanyName, displayName)
+    })
     .reduce((s, t) => s + t.currentYearTargetContainers, 0)
   const target = canonical?.targetFY2026 || tgtActive
 
@@ -150,8 +195,11 @@ export async function GET(
   const cutOff = "2026-04-01"
   const isNewBuyer = matchedAllPI.every((r) => r.piDate >= cutOff)
 
-  // Tier from "80/20 Buyers" sheet — T1→TIER1, T2→TIER2, T3→TIER3, Others/not in sheet→OTHERS
-  const sheetBuyer = buyers8020.find((b) => b.buyerName.toLowerCase().trim() === displayName.toLowerCase().trim())
+  // Tier from "80/20 Buyers" sheet — exact name first, fuzzy fallback
+  const sheetBuyer = buyers8020.find(
+    (b) => b.buyerName.toLowerCase().trim() === displayName.toLowerCase().trim()
+      || namesSimilar(b.buyerName, displayName)
+  )
   const tier: BuyerTier =
     sheetBuyer?.tier === "TIER1" ? "TIER1" :
     sheetBuyer?.tier === "TIER2" ? "TIER2" :
