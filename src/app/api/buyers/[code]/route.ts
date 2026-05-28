@@ -33,19 +33,20 @@ function stripSuffix(s: string): string {
 }
 
 // Returns true when two buyer names are clearly about the same entity
-function namesSimilar(a: string, b: string): boolean {
+// threshold: 0.6 when country already matches (less strict), 0.7 otherwise
+function namesSimilar(a: string, b: string, threshold = 0.7): boolean {
   const na = stripSuffix(a)
   const nb = stripSuffix(b)
   if (!na || !nb) return false
   if (na === nb) return true
   // Containment: "HARIB" is contained in "HARIB RICE CO LLC"
   if (na.includes(nb) || nb.includes(na)) return true
-  // Word-overlap: ≥50% of the shorter name's meaningful words appear in the other
+  // Word-overlap
   const wordsA = new Set(na.split(" ").filter((w) => w.length >= 3))
   const wordsB = nb.split(" ").filter((w) => w.length >= 3)
   if (!wordsA.size || !wordsB.length) return false
   const common = wordsB.filter((w) => wordsA.has(w)).length
-  return common >= Math.max(1, Math.floor(Math.min(wordsA.size, wordsB.length) * 0.7))
+  return common >= Math.max(1, Math.floor(Math.min(wordsA.size, wordsB.length) * threshold))
 }
 
 export async function GET(
@@ -76,53 +77,48 @@ export async function GET(
   const currentPI  = filterPIByFY(allPI, currentFY)
   const previousPI = filterPIByFY(allPI, previousFY)
 
-  // Resolve canonical buyer
-  const canonical = canonicalBuyers.find((c) => c.canonicalBuyerCode === code)
+  // ── Step 1: find who this buyer is ─────────────────────────────────────────
+  const canonical  = canonicalBuyers.find((c) => c.canonicalBuyerCode === code)
+  // Buyer master row keyed by buyerCode (e.g. HRB225)
+  const bmDirect   = buyerMaster.find((b) => b.buyerCode === code)
 
-  // Find all PI records belonging to this canonical code
-  const resolveCode = (r: { buyerCompanyName: string; buyerCode: string; countries?: string }) => {
-    // 1. Alias map (exact normalised name)
-    let c = aliasMap.get(normName(r.buyerCompanyName))
-    // 2. Buyer-code lookup in canonical map
-    if (!c && r.buyerCode) {
-      const cb = canonicalBuyers.find((x) => x.buyerCode === r.buyerCode)
-      if (cb) c = cb.canonicalBuyerCode
-    }
-    if (!c && canonical) {
-      // 3. Exact canonical name match
-      if (normName(r.buyerCompanyName) === normName(canonical.canonicalBuyerName)) {
-        c = code
-      }
-      // 4. Fuzzy name match — also require country to match to avoid false positives
-      if (!c && canonical.country && r.countries) {
-        const sameCountry = r.countries.toUpperCase().trim() === canonical.country.toUpperCase().trim()
-        if (sameCountry && namesSimilar(r.buyerCompanyName, canonical.canonicalBuyerName)) {
-          c = code
-        }
-      }
-      // 5. Fuzzy name match without country (last resort — no other PI had country set)
-      if (!c && !canonical.country && namesSimilar(r.buyerCompanyName, canonical.canonicalBuyerName)) {
-        c = code
-      }
-    }
-    return c ?? makeCode(r.buyerCompanyName)
+  // Determine the display name — prefer canonical name if it's a real name (not just the code)
+  const isCodeLike = (s: string) => /^[A-Z]{2,6}\d{2,6}$/i.test(s.trim())
+  const canonName  = canonical?.canonicalBuyerName && !isCodeLike(canonical.canonicalBuyerName)
+    ? canonical.canonicalBuyerName
+    : null
+  const targetName    = canonName || bmDirect?.buyerCompanyName || canonical?.canonicalBuyerName || code
+  const targetCountry = (canonical?.country || bmDirect?.countries || "").toUpperCase().trim()
+
+  // ── Step 2: name+country matcher ────────────────────────────────────────────
+  // PRIMARY: buyer name (fuzzy) + country — no code dependency
+  const matchesThisBuyer = (r: { buyerCompanyName: string; buyerCode: string; countries?: string }): boolean => {
+    // A. Alias map exact match (most trusted)
+    if (aliasMap.get(normName(r.buyerCompanyName)) === code) return true
+
+    const piName    = r.buyerCompanyName
+    const piCountry = (r.countries ?? "").toUpperCase().trim()
+    const hasSameCountry = targetCountry && piCountry && piCountry === targetCountry
+
+    // B. Exact name match (with or without country)
+    if (normName(piName) === normName(targetName)) return true
+
+    // C. Fuzzy name + country — 60% threshold (country gives extra confidence)
+    if (hasSameCountry && namesSimilar(piName, targetName, 0.6)) return true
+
+    // D. Fuzzy name only — 70% threshold (stricter without country)
+    if (!targetCountry && namesSimilar(piName, targetName, 0.7)) return true
+
+    return false
   }
 
-  const matchedCurrentPI  = currentPI.filter((r) => resolveCode(r) === code)
-  const matchedPreviousPI = previousPI.filter((r) => resolveCode(r) === code)
+  const matchedCurrentPI  = currentPI.filter(matchesThisBuyer)
+  const matchedPreviousPI = previousPI.filter(matchesThisBuyer)
+  const matchedAllPI      = allPI.filter(matchesThisBuyer)
 
-  // Always show currentFY as the active FY — no fallback to previousFY.
-  // currentFY actual = PI records dated in current FY (from PI date, not FY column)
-  // prevActual      = PI records dated in previous FY
   const activeFY   = currentFY
   const activePI   = matchedCurrentPI
   const activeWeek = currentWeek
-
-  // If raw code (no canonical map), also try matching by buyer code or name directly
-  const isRaw = code.startsWith("raw_")
-  const matchedAllPI = isRaw
-    ? allPI.filter((r) => makeCode(r.buyerCompanyName) === code)
-    : allPI.filter((r) => resolveCode(r) === code)
 
   // Sales person guard for SALES_PERSON role
   const sp = canonical?.primaryOwner
@@ -135,11 +131,14 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  // Buyer master record
-  const displayName = canonical?.canonicalBuyerName ?? matchedAllPI[0]?.buyerCompanyName ?? code
-  const bm = buyerMaster.find(
+  // Display name: prefer real name found in PI records over canonical/code
+  const displayName = matchedAllPI[0]?.buyerCompanyName || targetName
+
+  // Buyer master — try direct code match first, then by name
+  const bm = bmDirect ?? buyerMaster.find(
     (b) => b.buyerCode === (canonical?.buyerCode || matchedAllPI[0]?.buyerCode)
       || normName(b.buyerCompanyName) === normName(displayName)
+      || namesSimilar(b.buyerCompanyName, displayName)
   )
 
   // Aggregate performance — always currentFY as actual, previousFY as prevActual
