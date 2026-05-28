@@ -45,7 +45,7 @@ function namesSimilar(a: string, b: string): boolean {
   const wordsB = nb.split(" ").filter((w) => w.length >= 3)
   if (!wordsA.size || !wordsB.length) return false
   const common = wordsB.filter((w) => wordsA.has(w)).length
-  return common >= Math.max(1, Math.floor(Math.min(wordsA.size, wordsB.length) * 0.5))
+  return common >= Math.max(1, Math.floor(Math.min(wordsA.size, wordsB.length) * 0.7))
 }
 
 export async function GET(
