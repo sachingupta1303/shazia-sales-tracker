@@ -129,7 +129,7 @@ export function SalesClient({ userRole, salesPerson }: Props) {
     if (f.fy)          params.set("fy",          f.fy)
     if (f.search)      params.set("search",      f.search)
     params.set("page",  String(p))
-    params.set("limit", "200")
+    params.set("limit", "10000")   // fetch all filtered products; paginate by PI client-side
     try {
       const res = await fetch(`/api/sales?${params}`)
       if (!res.ok) throw new Error("Failed")
@@ -152,7 +152,6 @@ export function SalesClient({ userRole, salesPerson }: Props) {
   }, [filters, fetchData])
 
   const handleFilterChange = (f: FilterState) => { setFilters(f); setPage(1) }
-  const handlePage = (p: number) => { setPage(p); fetchData(filters, p) }
 
   const isSP = userRole === "SALES_PERSON"
 
@@ -181,6 +180,22 @@ export function SalesClient({ userRole, salesPerson }: Props) {
     }))
   }, [data?.records])
 
+  // ── Client-side PI pagination (10 PIs per page) ──────────────────────────────
+  const piTotalPages = Math.max(1, Math.ceil(groupedRecords.length / PI_PER_PAGE))
+  const safePiPage   = Math.min(piPage, piTotalPages)
+  const pagedGroups  = useMemo(
+    () => groupedRecords.slice((safePiPage - 1) * PI_PER_PAGE, safePiPage * PI_PER_PAGE),
+    [groupedRecords, safePiPage]
+  )
+
+  // Totals for the current page (10 PIs)
+  const pageContainers = pagedGroups.reduce((s, g) => s + g.containers, 0)
+  const pageMTs        = pagedGroups.reduce((s, g) => s + g.totalMTs, 0)
+
+  // Grand totals across the whole filtered dataset (from API summary)
+  const grandContainers = data?.summary.totalContainers ?? groupedRecords.reduce((s, g) => s + g.containers, 0)
+  const grandMTs        = data?.summary.totalMTs        ?? groupedRecords.reduce((s, g) => s + g.totalMTs, 0)
+
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -206,15 +221,15 @@ export function SalesClient({ userRole, salesPerson }: Props) {
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         {/* Header bar */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-wrap gap-2">
           <span className="text-sm font-semibold text-gray-700">
             {loading
               ? "Loading…"
               : `${groupedRecords.length} PIs · ${data?.pagination.total ?? 0} products`}
           </span>
-          {data && data.pagination.totalPages > 1 && (
-            <span className="text-xs text-gray-400">
-              Page {data.pagination.page} of {data.pagination.totalPages}
+          {!loading && groupedRecords.length > 0 && (
+            <span className="text-xs text-gray-500 font-medium">
+              Showing PI {(safePiPage - 1) * PI_PER_PAGE + 1}–{Math.min(safePiPage * PI_PER_PAGE, groupedRecords.length)} · Page {safePiPage} of {piTotalPages}
             </span>
           )}
         </div>
@@ -263,7 +278,7 @@ export function SalesClient({ userRole, salesPerson }: Props) {
                   </tr>
                 ))
               ) : (
-                groupedRecords.map((group) => {
+                pagedGroups.map((group) => {
                   const isExpanded = expandedPIs.has(group.piNumber)
                   return (
                     <React.Fragment key={group.piNumber}>
@@ -412,6 +427,38 @@ export function SalesClient({ userRole, salesPerson }: Props) {
                   )
                 })
               )}
+
+              {/* ── Page total + Grand total footer ─────────────────────── */}
+              {!loading && pagedGroups.length > 0 && (
+                <>
+                  {/* This page's total */}
+                  <tr className="bg-blue-50 border-t-2 border-blue-200">
+                    <td colSpan={7} className="px-3 py-2.5 text-right text-[11px] font-bold text-blue-900 uppercase tracking-wide">
+                      Page {safePiPage} Total ({pagedGroups.length} PIs)
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-black text-blue-900 tabular-nums text-[12px]">
+                      {formatNumber(pageContainers)}
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-black text-blue-900 tabular-nums text-[12px]">
+                      {pageMTs.toFixed(0)}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                  {/* Grand total across whole filtered dataset */}
+                  <tr className="bg-green-50 border-t border-green-300">
+                    <td colSpan={7} className="px-3 py-2.5 text-right text-[11px] font-bold text-green-900 uppercase tracking-wide">
+                      Grand Total ({groupedRecords.length} PIs · all pages)
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-black text-green-800 tabular-nums text-[12px]">
+                      {formatNumber(grandContainers)}
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-black text-green-800 tabular-nums text-[12px]">
+                      {formatNumber(grandMTs, 0)}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </>
+              )}
             </tbody>
           </table>
         </div>
@@ -425,7 +472,7 @@ export function SalesClient({ userRole, salesPerson }: Props) {
                   <div className="h-3 bg-gray-100 rounded w-1/2" />
                 </div>
               ))
-            : groupedRecords.map((group) => {
+            : pagedGroups.map((group) => {
                 const isExpanded = expandedPIs.has(group.piNumber)
                 return (
                   <div key={`${group.piNumber}-mobile`}>
@@ -485,26 +532,46 @@ export function SalesClient({ userRole, salesPerson }: Props) {
                 )
               })
           }
+
+          {/* Mobile: page total + grand total */}
+          {!loading && pagedGroups.length > 0 && (
+            <div className="divide-y divide-gray-100">
+              <div className="px-4 py-3 flex items-center justify-between text-xs font-bold bg-blue-50 text-blue-900">
+                <span className="uppercase tracking-wide">Page {safePiPage} Total ({pagedGroups.length} PIs)</span>
+                <div className="flex items-center gap-3 tabular-nums">
+                  <span>{formatNumber(pageContainers)} ctrs</span>
+                  <span>{pageMTs.toFixed(0)} MTs</span>
+                </div>
+              </div>
+              <div className="px-4 py-3 flex items-center justify-between text-xs font-bold bg-green-50 text-green-900">
+                <span className="uppercase tracking-wide">Grand Total ({groupedRecords.length} PIs)</span>
+                <div className="flex items-center gap-3 tabular-nums">
+                  <span>{formatNumber(grandContainers)} ctrs</span>
+                  <span>{formatNumber(grandMTs, 0)} MTs</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Pagination (only shown when data spans multiple pages) */}
-        {data && data.pagination.totalPages > 1 && (
+        {/* ── PI Pagination (10 PIs per page) ───────────────────────────── */}
+        {!loading && piTotalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
             <button
-              onClick={() => handlePage(page - 1)}
-              disabled={!data.pagination.hasPrev || loading}
+              onClick={() => setPiPage(p => Math.max(1, p - 1))}
+              disabled={safePiPage <= 1}
               className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               ← Prev
             </button>
             <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, data.pagination.totalPages) }, (_, i) => {
-                const p = Math.max(1, Math.min(data.pagination.totalPages - 4, page - 2)) + i
+              {Array.from({ length: Math.min(7, piTotalPages) }, (_, i) => {
+                const p = Math.max(1, Math.min(piTotalPages - 6, safePiPage - 3)) + i
                 return (
                   <button
                     key={p}
-                    onClick={() => handlePage(p)}
-                    className={`w-8 h-8 text-xs rounded-lg transition-colors ${p === page ? "bg-green-600 text-white font-semibold" : "text-gray-600 hover:bg-gray-100"}`}
+                    onClick={() => setPiPage(p)}
+                    className={`w-8 h-8 text-xs rounded-lg transition-colors ${p === safePiPage ? "bg-green-600 text-white font-semibold" : "text-gray-600 hover:bg-gray-100"}`}
                   >
                     {p}
                   </button>
@@ -512,8 +579,8 @@ export function SalesClient({ userRole, salesPerson }: Props) {
               })}
             </div>
             <button
-              onClick={() => handlePage(page + 1)}
-              disabled={!data.pagination.hasNext || loading}
+              onClick={() => setPiPage(p => Math.min(piTotalPages, p + 1))}
+              disabled={safePiPage >= piTotalPages}
               className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next →
