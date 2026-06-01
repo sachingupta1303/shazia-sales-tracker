@@ -69,6 +69,13 @@ function getCurrentFY() {
   return `${y}-${String(y+1).slice(-2)}`
 }
 function getCurrentFYMonth() { return ((new Date().getMonth()-3+12)%12)+1 }
+// Months of the current FY quarter — used as the default landing period so the
+// report always opens on data (the running month alone may be empty early in the month).
+function getCurrentQuarterMonths(): number[] {
+  const m = getCurrentFYMonth()
+  const start = Math.floor((m - 1) / 3) * 3 + 1
+  return [start, start + 1, start + 2]
+}
 function genFYList() {
   const fy = getCurrentFY(); const y = parseInt(fy.split("-")[0])
   return [`${y-2}-${String(y-1).slice(-2)}`,`${y-1}-${String(y).slice(-2)}`,fy]
@@ -659,7 +666,7 @@ function MonthPicker({
 export function ReportClient({ userRole }: { userRole: string }) {
   const fyList  = genFYList()
   const [fy,            setFY]        = useState(getCurrentFY)
-  const [selectedMonths,setMonths]    = useState<number[]>([getCurrentFYMonth()])
+  const [selectedMonths,setMonths]    = useState<number[]>(getCurrentQuarterMonths)
   const [data,          setData]      = useState<MonthlyReportData|null>(null)
   const [loading,       setLoading]   = useState(false)
   const [pdfBusy,       setPdfBusy]   = useState(false)
@@ -698,7 +705,7 @@ export function ReportClient({ userRole }: { userRole: string }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <select value={fy} onChange={e=>{ setFY(e.target.value); setMonths([getCurrentFYMonth()]) }}
+          <select value={fy} onChange={e=>{ setFY(e.target.value); setMonths(getCurrentQuarterMonths()) }}
             className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             {fyList.map(f=><option key={f} value={f}>FY {f}</option>)}
           </select>
