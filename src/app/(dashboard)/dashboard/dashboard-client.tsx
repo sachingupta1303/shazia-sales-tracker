@@ -462,13 +462,21 @@ function PIDrilldownPanel(props: PIDrilldownProps) {
       .finally(() => setLoading(false))
   }, [props.country, props.salesPerson, props.variety, props.fyMonth, props.fyWeek, props.fyQuarter, page])
 
-  // Compute totals across the current page
-  const totals = records.reduce(
-    (acc, r) => ({
-      containers: acc.containers  + (r.totalContainers ?? 0),
-      amount:     acc.amount      + (r.totalAmount     ?? 0),
-    }), { containers: 0, amount: 0 }
-  )
+  // Compute totals across the current page.
+  // Containers are a PI-level value repeated on every product row of the same PI,
+  // so count them once per unique piNumber. Amount stays summed per product row.
+  const totals = (() => {
+    const seenPI = new Set<string>()
+    let containers = 0
+    let amount = 0
+    for (const r of records) {
+      amount += r.totalAmount ?? 0
+      if (seenPI.has(r.piNumber)) continue
+      seenPI.add(r.piNumber)
+      containers += r.totalContainers ?? 0
+    }
+    return { containers, amount }
+  })()
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">

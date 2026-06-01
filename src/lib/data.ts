@@ -1475,8 +1475,42 @@ export function filterPIByFY(records: PIRecord[], fy: FinancialYear): PIRecord[]
   })
 }
 
+/**
+ * Sum container counts treating containers as a PI-LEVEL value.
+ * Each sheet row is one product; "Total Containers" is repeated on every
+ * product row of the same PI. So we count each unique PI exactly once.
+ * (Qty / MTs / Amount are product-level and should be summed per row instead.)
+ */
 export function sumContainers(records: PIRecord[]): number {
-  return records.reduce((sum, r) => sum + r.totalContainers, 0)
+  const perPI = new Map<string, number>()
+  for (const r of records) {
+    if (!perPI.has(r.piNumber)) perPI.set(r.piNumber, r.totalContainers)
+  }
+  let sum = 0
+  for (const v of perPI.values()) sum += v
+  return sum
+}
+
+/**
+ * Group container totals by a PI-level key (country / sales person / buyer /
+ * fy-week / variety etc.), counting each PI's containers only once per key.
+ * Returns a Map of key -> container total.
+ */
+export function sumContainersBy<K>(
+  records: PIRecord[],
+  keyFn: (r: PIRecord) => K
+): Map<K, number> {
+  const totals = new Map<K, number>()
+  const seen   = new Map<K, Set<string>>()
+  for (const r of records) {
+    const k = keyFn(r)
+    let seenSet = seen.get(k)
+    if (!seenSet) { seenSet = new Set(); seen.set(k, seenSet) }
+    if (seenSet.has(r.piNumber)) continue   // this PI already counted for this key
+    seenSet.add(r.piNumber)
+    totals.set(k, (totals.get(k) ?? 0) + r.totalContainers)
+  }
+  return totals
 }
 
 export function groupByBuyer(records: PIRecord[]): Record<string, PIRecord[]> {
@@ -1990,12 +2024,16 @@ export async function getMeetingSchedules(): Promise<MeetingSchedule[]> {
   const currentFYPI = filterPIByFY(allPI, currentFY)
 
   const normName = (s: string) => s.toLowerCase().trim()
-  const piByBuyer = new Map<string, { containers: number; lastOrderDate: string; orderCount: number }>()
+  const piByBuyer = new Map<string, { containers: number; lastOrderDate: string; orderCount: number; seenPIs: Set<string> }>()
   for (const r of currentFYPI) {
     const key = normName(r.buyerCompanyName)
-    if (!piByBuyer.has(key)) piByBuyer.set(key, { containers: 0, lastOrderDate: "", orderCount: 0 })
+    if (!piByBuyer.has(key)) piByBuyer.set(key, { containers: 0, lastOrderDate: "", orderCount: 0, seenPIs: new Set() })
     const e = piByBuyer.get(key)!
-    e.containers  += r.totalContainers
+    // Containers are PI-level (repeated per product row) — count each PI once per buyer.
+    if (!e.seenPIs.has(r.piNumber)) {
+      e.seenPIs.add(r.piNumber)
+      e.containers += r.totalContainers
+    }
     e.orderCount  += 1
     if (r.piDate > e.lastOrderDate) e.lastOrderDate = r.piDate
   }
@@ -2068,12 +2106,16 @@ export async function getOthersBuyers(): Promise<OthersBuyerSummary[]> {
   const currentFYPI = filterPIByFY(allPI, currentFY)
   const normName = (s: string) => s.toLowerCase().trim()
 
-  const piByBuyer = new Map<string, { containers: number; lastOrderDate: string }>()
+  const piByBuyer = new Map<string, { containers: number; lastOrderDate: string; seenPIs: Set<string> }>()
   for (const r of currentFYPI) {
     const key = normName(r.buyerCompanyName)
-    if (!piByBuyer.has(key)) piByBuyer.set(key, { containers: 0, lastOrderDate: "" })
+    if (!piByBuyer.has(key)) piByBuyer.set(key, { containers: 0, lastOrderDate: "", seenPIs: new Set() })
     const e = piByBuyer.get(key)!
-    e.containers += r.totalContainers
+    // Containers are PI-level (repeated per product row) — count each PI once per buyer.
+    if (!e.seenPIs.has(r.piNumber)) {
+      e.seenPIs.add(r.piNumber)
+      e.containers += r.totalContainers
+    }
     if (r.piDate > e.lastOrderDate) e.lastOrderDate = r.piDate
   }
 

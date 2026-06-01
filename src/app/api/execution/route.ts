@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { getPIRecords, getTargetRecords, getWeeklyReviews, filterPIByFY } from "@/lib/data"
+import { getPIRecords, getTargetRecords, getWeeklyReviews, filterPIByFY, sumContainers, sumContainersBy } from "@/lib/data"
 import {
   getCurrentFY, getCurrentFYWeek, targetDueTillWeek,
   getStatus, FY_CYCLES, getCycleForWeek,
@@ -41,11 +41,8 @@ export async function GET(req: Request) {
   const totalTarget = targets.reduce((s, t) => s + t.currentYearTargetContainers, 0)
   const weeklyTargetSlice = totalTarget / 52
 
-  // Containers by week
-  const actualByWeek = new Map<number, number>()
-  for (const r of fyPI) {
-    actualByWeek.set(r.fyWeekNo, (actualByWeek.get(r.fyWeekNo) ?? 0) + r.totalContainers)
-  }
+  // Containers by week — count each PI once (containers are PI-level)
+  const actualByWeek = sumContainersBy(fyPI, (r) => r.fyWeekNo)
 
   // Build 52 weekly bars
   const weeklyBars: WeeklyBar[] = Array.from({ length: currentWeek }, (_, i) => {
@@ -103,7 +100,7 @@ export async function GET(req: Request) {
     }
   })
 
-  const totalActual  = fyPI.reduce((s, r) => s + r.totalContainers, 0)
+  const totalActual  = sumContainers(fyPI)
   const targetDue    = targetDueTillWeek(totalTarget, currentWeek)
   const overallGap   = totalActual - targetDue
   const achievePct   = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : 0

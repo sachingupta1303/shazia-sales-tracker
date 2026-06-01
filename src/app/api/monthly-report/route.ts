@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { getPIRecords, get8020Buyers, getMeetingSchedules, filterPIByFY } from "@/lib/data"
+import { getPIRecords, get8020Buyers, getMeetingSchedules, filterPIByFY, sumContainers } from "@/lib/data"
 import { getCurrentFY, parsePIDate } from "@/lib/fy-utils"
 import type { FinancialYear } from "@/types"
 
@@ -129,7 +129,7 @@ export async function GET(req: Request) {
   }
 
   // ── Totals ─────────────────────────────────────────────────────────────────
-  const totalContainers = monthPI.reduce((s, r) => s + r.totalContainers, 0)
+  const totalContainers = sumContainers(monthPI)
   const totalMTs        = monthPI.reduce((s, r) => s + r.qtyMTs, 0)
   const totalAmount     = monthPI.reduce((s, r) => s + r.totalAmount, 0)
   const uniqueBuyers    = new Set(monthPI.map((r) => norm(r.buyerCompanyName))).size
@@ -139,15 +139,19 @@ export async function GET(req: Request) {
     ? parseFloat(((totalContainers / totalMonthlyTarget) * 100).toFixed(1)) : 0
 
   // ── Variety with description sub-breakdown ─────────────────────────────────
-  const varietyDescMap = new Map<string, Map<string, { containers: number; mts: number; amount: number }>>()
+  const varietyDescMap = new Map<string, Map<string, { containers: number; mts: number; amount: number; seenPIs: Set<string> }>>()
   for (const r of monthPI) {
     const variety = normalizeVariety(r.varieties)
     const desc    = normalizeDescription(r.description)
     if (!varietyDescMap.has(variety)) varietyDescMap.set(variety, new Map())
     const dMap = varietyDescMap.get(variety)!
-    if (!dMap.has(desc)) dMap.set(desc, { containers: 0, mts: 0, amount: 0 })
+    if (!dMap.has(desc)) dMap.set(desc, { containers: 0, mts: 0, amount: 0, seenPIs: new Set() })
     const e = dMap.get(desc)!
-    e.containers += r.totalContainers
+    // Containers are PI-level: count each PI once per (variety, description) group.
+    if (!e.seenPIs.has(r.piNumber)) {
+      e.seenPIs.add(r.piNumber)
+      e.containers += r.totalContainers
+    }
     e.mts        += r.qtyMTs
     e.amount     += r.totalAmount
   }
@@ -176,12 +180,16 @@ export async function GET(req: Request) {
     .sort((a, b) => b.containers - a.containers)
 
   // ── Country breakdown ──────────────────────────────────────────────────────
-  const countryMap = new Map<string, { containers: number; mts: number; amount: number; buyers: Set<string> }>()
+  const countryMap = new Map<string, { containers: number; mts: number; amount: number; buyers: Set<string>; seenPIs: Set<string> }>()
   for (const r of monthPI) {
     const c = r.countries?.toUpperCase().trim() || "UNKNOWN"
-    if (!countryMap.has(c)) countryMap.set(c, { containers: 0, mts: 0, amount: 0, buyers: new Set() })
+    if (!countryMap.has(c)) countryMap.set(c, { containers: 0, mts: 0, amount: 0, buyers: new Set(), seenPIs: new Set() })
     const e = countryMap.get(c)!
-    e.containers += r.totalContainers
+    // Containers are PI-level: count each PI once per country.
+    if (!e.seenPIs.has(r.piNumber)) {
+      e.seenPIs.add(r.piNumber)
+      e.containers += r.totalContainers
+    }
     e.mts        += r.qtyMTs
     e.amount     += r.totalAmount
     e.buyers.add(norm(r.buyerCompanyName))
@@ -205,12 +213,16 @@ export async function GET(req: Request) {
     .sort((a, b) => b.containers - a.containers)
 
   // ── Sales person breakdown ─────────────────────────────────────────────────
-  const spMap = new Map<string, { containers: number; mts: number; amount: number; buyers: Set<string> }>()
+  const spMap = new Map<string, { containers: number; mts: number; amount: number; buyers: Set<string>; seenPIs: Set<string> }>()
   for (const r of monthPI) {
     const sp = r.salesPerson?.toUpperCase().trim() || "—"
-    if (!spMap.has(sp)) spMap.set(sp, { containers: 0, mts: 0, amount: 0, buyers: new Set() })
+    if (!spMap.has(sp)) spMap.set(sp, { containers: 0, mts: 0, amount: 0, buyers: new Set(), seenPIs: new Set() })
     const e = spMap.get(sp)!
-    e.containers += r.totalContainers
+    // Containers are PI-level: count each PI once per sales person.
+    if (!e.seenPIs.has(r.piNumber)) {
+      e.seenPIs.add(r.piNumber)
+      e.containers += r.totalContainers
+    }
     e.mts        += r.qtyMTs
     e.amount     += r.totalAmount
     e.buyers.add(norm(r.buyerCompanyName))
@@ -228,13 +240,17 @@ export async function GET(req: Request) {
     .sort((a, b) => b.mts - a.mts)
 
   // ── Buyer breakdown ────────────────────────────────────────────────────────
-  const buyerSalesMap = new Map<string, { containers: number; mts: number; amount: number; country: string; sp: string }>()
+  const buyerSalesMap = new Map<string, { containers: number; mts: number; amount: number; country: string; sp: string; seenPIs: Set<string> }>()
   for (const r of monthPI) {
     const key = norm(r.buyerCompanyName)
     if (!buyerSalesMap.has(key))
-      buyerSalesMap.set(key, { containers: 0, mts: 0, amount: 0, country: r.countries, sp: r.salesPerson })
+      buyerSalesMap.set(key, { containers: 0, mts: 0, amount: 0, country: r.countries, sp: r.salesPerson, seenPIs: new Set() })
     const e = buyerSalesMap.get(key)!
-    e.containers += r.totalContainers
+    // Containers are PI-level: count each PI once per buyer.
+    if (!e.seenPIs.has(r.piNumber)) {
+      e.seenPIs.add(r.piNumber)
+      e.containers += r.totalContainers
+    }
     e.mts        += r.qtyMTs
     e.amount     += r.totalAmount
   }

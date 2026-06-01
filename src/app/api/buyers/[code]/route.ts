@@ -4,7 +4,7 @@ import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   getCanonicalBuyers, getBuyerAliasMap,
   filterPIByFY, getMeetingComplianceForBuyer, get8020Buyers,
-  getCountryStrategies,
+  getCountryStrategies, sumContainers, sumContainersBy,
 } from "@/lib/data"
 import { calcHealthScore } from "@/lib/health-score"
 import {
@@ -142,8 +142,8 @@ export async function GET(
   )
 
   // Aggregate performance — always currentFY as actual, previousFY as prevActual
-  const actual     = matchedCurrentPI.reduce((s, r) => s + r.totalContainers, 0)
-  const prevActual = matchedPreviousPI.reduce((s, r) => s + r.totalContainers, 0)
+  const actual     = sumContainers(matchedCurrentPI)
+  const prevActual = sumContainers(matchedPreviousPI)
   const orderCount = matchedCurrentPI.length
 
   // Target — currentFY: exact name first, fuzzy name fallback
@@ -161,11 +161,8 @@ export async function GET(
   const achievementPct = target > 0 ? Math.round((actual / target) * 100) : 0
   const status         = getStatus(target, actual, targetDue) as PerformanceStatus
 
-  // Weekly breakdown for health + chart
-  const byWeek = new Map<number, number>()
-  for (const r of activePI) {
-    byWeek.set(r.fyWeekNo, (byWeek.get(r.fyWeekNo) ?? 0) + r.totalContainers)
-  }
+  // Weekly breakdown for health + chart — count each PI's containers once per week
+  const byWeek = sumContainersBy(activePI, (r) => r.fyWeekNo)
 
   const healthScore = calcHealthScore({
     target, actual, prevYearActual: prevActual,

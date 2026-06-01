@@ -13,6 +13,7 @@ import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   filterPIByFY, appendAlert, getAlerts, updateAlertStatus,
   getPendingReviews, getTasks, updateTaskStatus,
+  sumContainersBy,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -65,30 +66,35 @@ async function runTriggers(): Promise<Omit<Alert, "id">[]> {
   }
 
   // ── Group PI by buyer ────────────────────────────────────────────────────
-  const buyerCurrentMap = new Map<string, { actual: number; lastWeek: number; sp: string; name: string; country: string; byWeek: number[] }>()
+  const buyerCurrentMap = new Map<string, { actual: number; lastWeek: number; sp: string; name: string; country: string; byWeek: number[]; seenPI: Set<string>; seenWeekPI: Set<string> }>()
   for (const r of currentPI) {
     const key = normName(r.buyerCompanyName)
-    const e   = buyerCurrentMap.get(key)
-    if (e) {
-      e.actual += r.totalContainers
-      e.lastWeek = Math.max(e.lastWeek, r.fyWeekNo)
-      e.byWeek[r.fyWeekNo] = (e.byWeek[r.fyWeekNo] ?? 0) + r.totalContainers
-    } else {
-      const arr = new Array(53).fill(0)
-      arr[r.fyWeekNo] = r.totalContainers
-      buyerCurrentMap.set(key, {
-        actual: r.totalContainers, lastWeek: r.fyWeekNo,
+    let e     = buyerCurrentMap.get(key)
+    if (!e) {
+      e = {
+        actual: 0, lastWeek: r.fyWeekNo,
         sp: r.salesPerson, name: r.buyerCompanyName,
-        country: r.countries, byWeek: arr,
-      })
+        country: r.countries, byWeek: new Array(53).fill(0),
+        seenPI: new Set(), seenWeekPI: new Set(),
+      }
+      buyerCurrentMap.set(key, e)
+    }
+    e.lastWeek = Math.max(e.lastWeek, r.fyWeekNo)
+    // Containers are PI-level (repeated per product row) — count each PI once per buyer.
+    if (!e.seenPI.has(r.piNumber)) {
+      e.seenPI.add(r.piNumber)
+      e.actual += r.totalContainers
+    }
+    // …and once per (buyer, week).
+    const weekKey = r.fyWeekNo + ":" + r.piNumber
+    if (!e.seenWeekPI.has(weekKey)) {
+      e.seenWeekPI.add(weekKey)
+      e.byWeek[r.fyWeekNo] = (e.byWeek[r.fyWeekNo] ?? 0) + r.totalContainers
     }
   }
 
-  const prevBuyerActual = new Map<string, number>()
-  for (const r of previousPI) {
-    const key = normName(r.buyerCompanyName)
-    prevBuyerActual.set(key, (prevBuyerActual.get(key) ?? 0) + r.totalContainers)
-  }
+  // Containers are PI-level — count each PI once per buyer.
+  const prevBuyerActual = sumContainersBy(previousPI, (r) => normName(r.buyerCompanyName))
 
   // ── Buyer-level triggers ─────────────────────────────────────────────────
   for (const t of targets) {
@@ -255,11 +261,8 @@ async function runTriggers(): Promise<Omit<Alert, "id">[]> {
   }
 
   // ── Country-level triggers ───────────────────────────────────────────────
-  const countryActualMap = new Map<string, number>()
-  for (const r of currentPI) {
-    const c = r.countries.toUpperCase()
-    countryActualMap.set(c, (countryActualMap.get(c) ?? 0) + r.totalContainers)
-  }
+  // Containers are PI-level — count each PI once per country.
+  const countryActualMap = sumContainersBy(currentPI, (r) => r.countries.toUpperCase())
   const countryTargetMap = new Map<string, number>()
   for (const t of targets) {
     const c = t.countries.toUpperCase()

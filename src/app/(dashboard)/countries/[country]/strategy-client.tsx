@@ -358,6 +358,19 @@ export function StrategyClient({ country, userRole, userName, allSalesPersons }:
 
   const { performance: p, isDreamMarket, hasManualStrategy, dreamRank, piHistory = [], meta } = data
 
+  // Containers are a PI-level value repeated on every product row of the same PI,
+  // so count them once per unique piNumber (MTs stay summed per product row).
+  const piHistoryCtrs = (() => {
+    const seenPI = new Set<string>()
+    let total = 0
+    for (const r of piHistory as any[]) {
+      if (seenPI.has(r.piNumber)) continue
+      seenPI.add(r.piNumber)
+      total += r.totalContainers
+    }
+    return total
+  })()
+
   // Derived stats
   const activeBuyers = data.buyerRows.filter(b => b.actual > 0).length
   const growthPct    = p.prevActual > 0 ? Math.round(((p.actual - p.prevActual) / p.prevActual) * 100) : null
@@ -685,7 +698,7 @@ export function StrategyClient({ country, userRole, userName, allSalesPersons }:
                 <tr>
                   <td colSpan={4} className="px-4 py-3 text-right text-[10px] text-gray-400 uppercase tracking-widest">Grand Total:</td>
                   <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                    {piHistory.reduce((s: number, r: any) => s + r.totalContainers, 0)}
+                    {piHistoryCtrs}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-gray-600 text-xs">
                     {piHistory.reduce((s: number, r: any) => s + (r.qtyMTs || 0), 0).toFixed(0)}

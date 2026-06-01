@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import {
   getOwnershipRecords, addOwnershipRecord,
-  getPIRecords, getTargetRecords, filterPIByFY,
+  getPIRecords, getTargetRecords, filterPIByFY, sumContainers,
 } from "@/lib/data"
 import { getCurrentFY, getCurrentFYWeek, targetDueTillWeek } from "@/lib/fy-utils"
 import type { AppUser } from "@/types"
@@ -48,13 +48,13 @@ export async function POST(req: Request) {
   // Compute historical actual (containers sold by fromOwner for this buyer up to today)
   const allPI = await getPIRecords()
   const fyPI  = filterPIByFY(allPI, currentFY)
-  const historicalActual = fyPI
-    .filter((r) =>
+  const historicalActual = sumContainers(
+    fyPI.filter((r) =>
       r.salesPerson.toLowerCase() === body.fromOwner.toLowerCase() &&
       (r.buyerCompanyName.toLowerCase().includes(body.buyerName.toLowerCase()) ||
        r.buyerCode === body.canonicalBuyerCode)
     )
-    .reduce((s, r) => s + r.totalContainers, 0)
+  )
 
   // Compute remaining target = annual target - containers_sold_to_date
   const targets = await getTargetRecords(currentFY)

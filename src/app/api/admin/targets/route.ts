@@ -11,7 +11,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import {
   getTargetRecords, getPIRecords, filterPIByFY,
-  updateBuyerTarget, getTargetAudit,
+  updateBuyerTarget, getTargetAudit, sumContainersBy,
 } from "@/lib/data"
 import { getCurrentFY, getCurrentFYWeek, targetDueTillWeek } from "@/lib/fy-utils"
 import type { AppUser, FinancialYear } from "@/types"
@@ -45,12 +45,8 @@ export async function GET(req: Request) {
   ])
   const fyPI = filterPIByFY(allPI, fy)
 
-  // Aggregate actuals by buyer name
-  const actualByName = new Map<string, number>()
-  for (const r of fyPI) {
-    const k = r.buyerCompanyName.toLowerCase()
-    actualByName.set(k, (actualByName.get(k) ?? 0) + r.totalContainers)
-  }
+  // Aggregate actuals by buyer name — containers are PI-level, count each PI once per name
+  const actualByName = sumContainersBy(fyPI, (r) => r.buyerCompanyName.toLowerCase())
 
   const currentWeek = getCurrentFYWeek()
 

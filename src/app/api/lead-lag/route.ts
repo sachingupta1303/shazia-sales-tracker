@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { getPIRecords, getTargetRecords, getLeadActivities, filterPIByFY } from "@/lib/data"
+import { getPIRecords, getTargetRecords, getLeadActivities, filterPIByFY, sumContainers, sumContainersBy } from "@/lib/data"
 import {
   getCurrentFY, getCurrentFYWeek, targetDueTillWeek,
   FY_CYCLES, getCycleForWeek,
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
   for (const a of acts) outcomes[a.outcome] = (outcomes[a.outcome] ?? 0) + 1
 
   // ── Lag Measures ─────────────────────────────────────────────────────────
-  const totalContainers = fyPI.reduce((s, r) => s + r.totalContainers, 0)
+  const totalContainers = sumContainers(fyPI)
   const ordersClosed    = fyPI.length
 
   // Target — restrict to filters
@@ -110,7 +110,7 @@ export async function GET(req: Request) {
   const byWeek: { fyWeek: number; label: string; leadCount: number; lagContainers: number }[] = []
   for (let w = startWeek; w <= endWeek; w++) {
     const leadCount = acts.filter((a) => a.fyWeek === w).length
-    const lagCtrs   = fyPI.filter((r) => r.fyWeekNo === w).reduce((s, r) => s + r.totalContainers, 0)
+    const lagCtrs   = sumContainers(fyPI.filter((r) => r.fyWeekNo === w))
     byWeek.push({ fyWeek: w, label: `W${w}`, leadCount, lagContainers: lagCtrs })
   }
 
@@ -118,8 +118,9 @@ export async function GET(req: Request) {
   const spLead: Record<string, number> = {}
   const spLag:  Record<string, number> = {}
   for (const a of allActivities) spLead[a.salesPerson] = (spLead[a.salesPerson] ?? 0) + 1
-  for (const r of filterPIByFY(allPI, currentFY)) {
-    spLag[r.salesPerson] = (spLag[r.salesPerson] ?? 0) + r.totalContainers
+  // Containers are PI-level — count each PI once per sales person.
+  for (const [sp, ctrs] of sumContainersBy(filterPIByFY(allPI, currentFY), (r) => r.salesPerson)) {
+    spLag[sp] = ctrs
   }
   const spLeaderboard = Object.keys({ ...spLead, ...spLag })
     .filter((sp) => sp)

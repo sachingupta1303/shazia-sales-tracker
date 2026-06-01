@@ -1150,9 +1150,21 @@ function PITable({ records, page, onPage }: { records: PIRecord[]; page: number;
     <div className="py-8 text-center text-gray-400 text-sm">No PI records found.</div>
   )
 
-  const pageActual = currentRecords.reduce((s, r) => s + r.totalContainers, 0)
+  // Containers are a PI-level value repeated on every product row of the same PI,
+  // so count them once per unique piNumber. MTs stay summed per product row.
+  const sumContainersByPI = (rows: PIRecord[]) => {
+    const seenPI = new Set<string>()
+    let total = 0
+    for (const r of rows) {
+      if (seenPI.has(r.piNumber)) continue
+      seenPI.add(r.piNumber)
+      total += r.totalContainers
+    }
+    return total
+  }
+  const pageActual = sumContainersByPI(currentRecords)
   const pageMTs = currentRecords.reduce((s, r) => s + (r.qtyMTs || 0), 0)
-  const totalActual = records.reduce((s, r) => s + r.totalContainers, 0)
+  const totalActual = sumContainersByPI(records)
   const totalMTs = records.reduce((s, r) => s + (r.qtyMTs || 0), 0)
 
   return (

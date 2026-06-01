@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   getCanonicalBuyers, getBuyerAliasMap,
-  filterPIByFY, get8020Buyers,
+  filterPIByFY, get8020Buyers, sumContainers,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -68,8 +68,8 @@ export async function GET(
     .filter((r) => r.salesPerson.toUpperCase() === name.toUpperCase())
 
   // Aggregated Performance
-  const actual       = currentPI.reduce((s, r) => s + r.totalContainers, 0)
-  const prevActual   = prevPI.reduce((s, r) => s + r.totalContainers, 0)
+  const actual       = sumContainers(currentPI)
+  const prevActual   = sumContainers(prevPI)
   
   const target = targets
     .filter((t) => t.financialYear === currentFY && t.salesPerson.toUpperCase() === name.toUpperCase())
@@ -92,21 +92,28 @@ export async function GET(
   }>()
 
   // Process PIs
+  const seenPIByBuyer = new Map<string, Set<string>>()
   for (const r of currentPI) {
     const key = r.buyerCode || r.buyerCompanyName
     if (!buyerMap.has(key)) {
       const { segment, isKeyAccount, canonicalCode } = resolveSegment(r.buyerCompanyName, r.buyerCode)
-      buyerMap.set(key, { 
-        name: r.buyerCompanyName, 
-        code: canonicalCode, 
-        actual: 0, 
-        target: 0, 
-        segment, 
+      buyerMap.set(key, {
+        name: r.buyerCompanyName,
+        code: canonicalCode,
+        actual: 0,
+        target: 0,
+        segment,
         isKeyAccount,
         country: r.countries
       })
     }
-    buyerMap.get(key)!.actual += r.totalContainers
+    // Containers are PI-level (repeated per product row) — count each PI once per buyer.
+    let seen = seenPIByBuyer.get(key)
+    if (!seen) { seen = new Set(); seenPIByBuyer.set(key, seen) }
+    if (!seen.has(r.piNumber)) {
+      seen.add(r.piNumber)
+      buyerMap.get(key)!.actual += r.totalContainers
+    }
   }
 
   // Process Targets for buyers not yet in PI history

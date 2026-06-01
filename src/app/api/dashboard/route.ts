@@ -79,15 +79,28 @@ export async function GET(req: Request) {
     // ── Country breakdown ─────────────────────────────────────────────────────
     const countryMap: Record<string, { actual: number; target: number; prevYear: number }> = {}
 
+    // Containers are PI-level (repeated on each product row), so count each PI
+    // once per country+accumulator. MTs/amounts/buyers stay per-row.
+    const seenActualByCountry: Record<string, Set<string>> = {}
+    const seenPrevByCountry: Record<string, Set<string>> = {}
+
     currentYearPI.forEach((r) => {
       const c = r.countries.toUpperCase()
       if (!countryMap[c]) countryMap[c] = { actual: 0, target: 0, prevYear: 0 }
-      countryMap[c].actual += r.totalContainers
+      if (!seenActualByCountry[c]) seenActualByCountry[c] = new Set()
+      if (!seenActualByCountry[c].has(r.piNumber)) {
+        seenActualByCountry[c].add(r.piNumber)
+        countryMap[c].actual += r.totalContainers
+      }
     })
     previousYearPI.forEach((r) => {
       const c = r.countries.toUpperCase()
       if (!countryMap[c]) countryMap[c] = { actual: 0, target: 0, prevYear: 0 }
-      countryMap[c].prevYear += r.totalContainers
+      if (!seenPrevByCountry[c]) seenPrevByCountry[c] = new Set()
+      if (!seenPrevByCountry[c].has(r.piNumber)) {
+        seenPrevByCountry[c].add(r.piNumber)
+        countryMap[c].prevYear += r.totalContainers
+      }
     })
     targets.forEach((t) => {
       const c = t.countries.toUpperCase()

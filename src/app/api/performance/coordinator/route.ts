@@ -61,17 +61,18 @@ export async function GET(req: Request) {
     ])
 
     // Aggregate by coordinator name
-    const coordData = new Map<string, { 
-      tasks: BuyerTask[]; 
-      actual: number; 
+    const coordData = new Map<string, {
+      tasks: BuyerTask[];
+      actual: number;
       target: number;
       buyers: Set<string>;
+      seenPIs: Set<string>;
     }>()
 
     const getEntry = (name: string) => {
       const n = name.trim().toUpperCase()
       if (!coordData.has(n)) {
-        coordData.set(n, { tasks: [], actual: 0, target: 0, buyers: new Set() })
+        coordData.set(n, { tasks: [], actual: 0, target: 0, buyers: new Set(), seenPIs: new Set() })
       }
       return coordData.get(n)!
     }
@@ -96,7 +97,11 @@ export async function GET(req: Request) {
       if (coordinatorParam && r.salesCoordinator.toLowerCase() !== coordinatorParam.toLowerCase()) continue
       
       const entry = getEntry(r.salesCoordinator)
-      entry.actual += r.totalContainers
+      // Containers are PI-level (repeated on every product row) — count each PI once per coordinator.
+      if (!entry.seenPIs.has(r.piNumber)) {
+        entry.seenPIs.add(r.piNumber)
+        entry.actual += r.totalContainers
+      }
       entry.buyers.add(r.buyerCode || r.buyerCompanyName)
     }
 

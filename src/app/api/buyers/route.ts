@@ -125,6 +125,11 @@ export async function GET(req: Request) {
     salesPerson:    string
     coordinator:    string
     isNew:          boolean
+    // PI-dedup tracking — containers are PI-level but repeated on every product
+    // row, so each PI must be counted once per accumulator.
+    seenCurrentPI:  Set<string>          // piNumbers counted into currentCtrs
+    seenPrevPI:     Set<string>          // piNumbers counted into prevCtrs
+    seenWeekPI:     Set<string>          // `${fyWeekNo}|${piNumber}` counted into byWeek
   }
 
   const buckets = new Map<string, Bucket>()
@@ -159,13 +164,24 @@ export async function GET(req: Request) {
         salesPerson:   r.salesPerson,
         coordinator:   r.salesCoordinator || coordinatorMap.get(nameKey) || "",
         isNew:         !existingBuyers.has(nameKey) && (!r.buyerCode || !existingBuyers.has(r.buyerCode)),
+        seenCurrentPI: new Set(),
+        seenPrevPI:    new Set(),
+        seenWeekPI:    new Set(),
       })
     }
     const b = buckets.get(code)!
     b.rawNames.add(r.buyerCompanyName)
-    b.currentCtrs += r.totalContainers
+    // Containers are PI-level — count each PI once per bucket / once per week.
+    if (!b.seenCurrentPI.has(r.piNumber)) {
+      b.seenCurrentPI.add(r.piNumber)
+      b.currentCtrs += r.totalContainers
+    }
     b.orderCount  += 1
-    b.byWeek.set(r.fyWeekNo, (b.byWeek.get(r.fyWeekNo) ?? 0) + r.totalContainers)
+    const weekKey = `${r.fyWeekNo}|${r.piNumber}`
+    if (!b.seenWeekPI.has(weekKey)) {
+      b.seenWeekPI.add(weekKey)
+      b.byWeek.set(r.fyWeekNo, (b.byWeek.get(r.fyWeekNo) ?? 0) + r.totalContainers)
+    }
     if (!b.lastOrderDate || r.piDate > b.lastOrderDate) b.lastOrderDate = r.piDate
     if (r.salesPerson) b.salesPerson = r.salesPerson
     if (r.salesCoordinator && !b.coordinator) b.coordinator = r.salesCoordinator
@@ -188,9 +204,17 @@ export async function GET(req: Request) {
         salesPerson:   r.salesPerson,
         coordinator:   r.salesCoordinator || coordinatorMap.get(nameKey) || "",
         isNew:         !existingBuyers.has(nameKey) && (!r.buyerCode || !existingBuyers.has(r.buyerCode)),
+        seenCurrentPI: new Set(),
+        seenPrevPI:    new Set(),
+        seenWeekPI:    new Set(),
       })
     }
-    buckets.get(code)!.prevCtrs += r.totalContainers
+    const pb = buckets.get(code)!
+    // Containers are PI-level — count each PI once per bucket.
+    if (!pb.seenPrevPI.has(r.piNumber)) {
+      pb.seenPrevPI.add(r.piNumber)
+      pb.prevCtrs += r.totalContainers
+    }
   }
 
   // Ensure all canonical buyers with a target also have a bucket
@@ -209,6 +233,9 @@ export async function GET(req: Request) {
         salesPerson:   c.primaryOwner,
         coordinator:   coordinatorMap.get(nameKey) || "",
         isNew:         !existingBuyers.has(nameKey) && (!c.buyerCode || !existingBuyers.has(c.buyerCode)),
+        seenCurrentPI: new Set(),
+        seenPrevPI:    new Set(),
+        seenWeekPI:    new Set(),
       })
     }
   }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import {
   getPIRecords, getTargetRecords, getCountryTargets, filterPIByFY,
-  getCountryStrategies,
+  getCountryStrategies, sumContainersBy,
 } from "@/lib/data"
 import { getCurrentFY, getPreviousFY, getCurrentFYWeek, targetDueTillWeek, getStatus } from "@/lib/fy-utils"
 import { DREAM_MARKET_TOP_N } from "@/types"
@@ -39,22 +39,19 @@ export async function GET(req: Request) {
   }
 
   // Build actuals by country (current + prev FY)
-  const actualByCountry = new Map<string, number>()
-  const prevByCountry   = new Map<string, number>()
+  // Containers are PI-level (repeated across product rows) → count once per PI
+  // per country via sumContainersBy. MTs/amount stay product-level (not used here).
+  const actualByCountry = sumContainersBy(currentPI, (r) => r.countries.toUpperCase())
+  const prevByCountry   = sumContainersBy(prevPI,    (r) => r.countries.toUpperCase())
   const spByCountry     = new Map<string, Set<string>>()
   const buyersByCountry = new Map<string, Set<string>>()
 
   for (const r of currentPI) {
     const c = r.countries.toUpperCase()
-    actualByCountry.set(c, (actualByCountry.get(c) ?? 0) + r.totalContainers)
     if (!spByCountry.has(c)) spByCountry.set(c, new Set())
     spByCountry.get(c)!.add(r.salesPerson)
     if (!buyersByCountry.has(c)) buyersByCountry.set(c, new Set())
     buyersByCountry.get(c)!.add(r.buyerCompanyName)
-  }
-  for (const r of prevPI) {
-    const c = r.countries.toUpperCase()
-    prevByCountry.set(c, (prevByCountry.get(c) ?? 0) + r.totalContainers)
   }
 
   // Build target by country from TARGET_MASTER (buyer-level targets summed per country)

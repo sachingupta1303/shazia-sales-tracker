@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster, getCanonicalBuyers,
-  filterPIByFY, getBuyerAliasMap, get8020Buyers,
+  filterPIByFY, getBuyerAliasMap, get8020Buyers, sumContainers,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -132,19 +132,38 @@ export async function GET(req: Request) {
       const piCurrent  = byBuyerCurrent[code]  || byBuyerCurrent[key]  || []
       const piPrevious = byBuyerPrevious[code] || byBuyerPrevious[key] || []
 
-      const actual   = piCurrent.reduce((s, r) => s + r.totalContainers, 0)
-      const prevYear = piPrevious.reduce((s, r) => s + r.totalContainers, 0)
+      const actual   = sumContainers(piCurrent)
+      const prevYear = sumContainers(piPrevious)
       const target   = t.currentYearTargetContainers
       const due      = targetDueTillWeek(target, week)
       const gap      = parseFloat((actual - due).toFixed(2))
 
+      // Containers are a PI-level value repeated on every product row of a PI.
+      // Count each PI once per brand and once per variety to avoid over-counting
+      // multi-product PIs.
       const brandMap = new Map<string, number>()
+      const brandSeen = new Map<string, Set<string>>()
+      const basmatiSeen = new Set<string>()
+      const nonBasmatiSeen = new Set<string>()
       let basmati = 0
       let nonBasmati = 0
       for (const r of piCurrent) {
-        if (r.brand) brandMap.set(r.brand, (brandMap.get(r.brand) ?? 0) + r.totalContainers)
-        if (r.varieties === "BASMATI")     basmati    += r.totalContainers
-        if (r.varieties === "NON BASMATI") nonBasmati += r.totalContainers
+        if (r.brand) {
+          let seen = brandSeen.get(r.brand)
+          if (!seen) { seen = new Set(); brandSeen.set(r.brand, seen) }
+          if (!seen.has(r.piNumber)) {
+            seen.add(r.piNumber)
+            brandMap.set(r.brand, (brandMap.get(r.brand) ?? 0) + r.totalContainers)
+          }
+        }
+        if (r.varieties === "BASMATI" && !basmatiSeen.has(r.piNumber)) {
+          basmatiSeen.add(r.piNumber)
+          basmati += r.totalContainers
+        }
+        if (r.varieties === "NON BASMATI" && !nonBasmatiSeen.has(r.piNumber)) {
+          nonBasmatiSeen.add(r.piNumber)
+          nonBasmati += r.totalContainers
+        }
       }
       const topBrands: BrandShare[] = [...brandMap.entries()]
         .sort((a, b) => b[1] - a[1])

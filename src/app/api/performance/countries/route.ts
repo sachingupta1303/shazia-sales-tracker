@@ -100,12 +100,19 @@ export async function GET(req: Request) {
         ...piPrev.map((r) => r.buyerCode || r.buyerCompanyName),
       ]).size
 
-      // Top buyers in this country (current FY)
+      // Top buyers in this country (current FY).
+      // Containers are PI-level (repeated on every product row) — count each PI once per buyer.
       const buyerTotals = new Map<string, { name: string; code: string; ctrs: number }>()
+      const buyerSeenPIs = new Map<string, Set<string>>()
       for (const r of piList) {
         const key = r.buyerCode || r.buyerCompanyName
         const e = buyerTotals.get(key) ?? { name: r.buyerCompanyName, code: r.buyerCode, ctrs: 0 }
-        e.ctrs += r.totalContainers
+        let seen = buyerSeenPIs.get(key)
+        if (!seen) { seen = new Set(); buyerSeenPIs.set(key, seen) }
+        if (!seen.has(r.piNumber)) {
+          seen.add(r.piNumber)
+          e.ctrs += r.totalContainers
+        }
         buyerTotals.set(key, e)
       }
       const topBuyers: TopBuyer[] = [...buyerTotals.values()]

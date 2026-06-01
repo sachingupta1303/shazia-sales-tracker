@@ -4,7 +4,7 @@ import {
   getPIRecords, getTargetRecords, getCountryTargets,
   filterPIByFY, getBuyerMaster,
   getCanonicalBuyers, getCountryStrategies, getTravelPlans,
-  getBuyerAliasMap,
+  getBuyerAliasMap, sumContainers, sumContainersBy,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -69,8 +69,8 @@ export async function GET(
     .reduce((s, t) => s + t.currentYearTargetContainers, 0)
 
   const target     = countryTargetContainers || countryTargetRec?.planned2026 || 0
-  const actual     = currentPI.reduce((s, r) => s + r.totalContainers, 0)
-  const prevActual = prevPI.reduce((s, r) => s + r.totalContainers, 0)
+  const actual     = sumContainers(currentPI)
+  const prevActual = sumContainers(prevPI)
   const targetDue  = targetDueTillWeek(target, currentWeek)
   const gap        = actual - targetDue
   const achPct     = target > 0 ? Math.round((actual / target) * 100) : 0
@@ -78,16 +78,22 @@ export async function GET(
 
   // Buyer breakdown for this country
   const buyerMap = new Map<string, { name: string; code: string; actual: number; target: number; sp: string }>()
+  // Containers are PI-level → count each PI once per buyer key.
+  const buyerSeenPIs = new Map<string, Set<string>>()
   for (const r of currentPI) {
     const key = r.buyerCode || r.buyerCompanyName
+    let seen = buyerSeenPIs.get(key)
+    if (!seen) { seen = new Set(); buyerSeenPIs.set(key, seen) }
+    const isNewPI = !seen.has(r.piNumber)
+    if (isNewPI) seen.add(r.piNumber)
     const existing = buyerMap.get(key)
     if (existing) {
-      existing.actual += r.totalContainers
+      if (isNewPI) existing.actual += r.totalContainers
     } else {
       buyerMap.set(key, {
         name:   r.buyerCompanyName,
         code:   r.buyerCode,
-        actual: r.totalContainers,
+        actual: isNewPI ? r.totalContainers : 0,
         target: 0,
         sp:     r.salesPerson,
       })
@@ -125,8 +131,7 @@ export async function GET(
   const otherBuyers     = buyerRows.filter((b) => b.segment !== "VIP" && b.segment !== "STRATEGIC")
 
   // Cycle actuals for this country
-  const actualByWeek = new Map<number, number>()
-  for (const r of currentPI) actualByWeek.set(r.fyWeekNo, (actualByWeek.get(r.fyWeekNo) ?? 0) + r.totalContainers)
+  const actualByWeek = sumContainersBy(currentPI, (r) => r.fyWeekNo)
 
   const weeklySlice = target / 52
   const cycleBreakdown = FY_CYCLES.map((c) => {
@@ -145,8 +150,7 @@ export async function GET(
   })
 
   // Sales person breakdown
-  const spMap = new Map<string, number>()
-  for (const r of currentPI) spMap.set(r.salesPerson, (spMap.get(r.salesPerson) ?? 0) + r.totalContainers)
+  const spMap = sumContainersBy(currentPI, (r) => r.salesPerson)
   const spBreakdown = Array.from(spMap.entries())
     .map(([sp, containers]) => ({ salesPerson: sp, containers }))
     .sort((a, b) => b.containers - a.containers)

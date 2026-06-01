@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import {
   getWeeklyReviews, addWeeklyReview,
-  getPIRecords, getTargetRecords, filterPIByFY,
+  getPIRecords, getTargetRecords, filterPIByFY, sumContainers,
 } from "@/lib/data"
 import { getCurrentFY, getCurrentFYWeek, targetDueTillWeek } from "@/lib/fy-utils"
 import type { AppUser } from "@/types"
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
       (r) => r.fyWeekNo === (body.fyWeek ?? currentWeek) &&
              (!body.salesPerson || r.salesPerson.toLowerCase() === body.salesPerson.toLowerCase())
     )
-    actualContainers = weekPI.reduce((s, r) => s + r.totalContainers, 0)
+    actualContainers = sumContainers(weekPI)
   }
 
   // Auto-compute target if not supplied
