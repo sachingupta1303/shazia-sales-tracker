@@ -30,7 +30,7 @@ export async function GET(req: Request) {
 
   // ── Pagination & Sort ─────────────────────────────────────────────────────
   const page    = Math.max(1, Number(p.get("page")  || 1))
-  const limit   = Math.min(200, Math.max(10, Number(p.get("limit") || 50)))
+  const limit   = Math.min(10000, Math.max(10, Number(p.get("limit") || 50)))
   const sortDir = p.get("sortDir") === "asc" ? "asc" : "desc"
 
   // ── Role enforcement ──────────────────────────────────────────────────────
@@ -94,7 +94,14 @@ export async function GET(req: Request) {
   })
 
   // ── Aggregate summary ─────────────────────────────────────────────────────
-  const totalContainers = filtered.reduce((s, r) => s + r.totalContainers, 0)
+  // Containers are a PI-level value repeated on every product row of a PI, so we
+  // must count each PI ONCE — summing across product rows over-counts multi-product PIs.
+  const containersByPI = new Map<string, number>()
+  for (const r of filtered) {
+    if (!containersByPI.has(r.piNumber)) containersByPI.set(r.piNumber, r.totalContainers)
+  }
+  const totalContainers = [...containersByPI.values()].reduce((s, c) => s + c, 0)
+  // MTs are per-product, so summing every row is correct here.
   const totalMTs        = filtered.reduce((s, r) => s + r.qtyMTs, 0)
   const uniqueBuyers    = new Set(filtered.map((r) => r.buyerCode || r.buyerCompanyName)).size
   const uniqueCountries = new Set(filtered.map((r) => r.countries.toUpperCase())).size
