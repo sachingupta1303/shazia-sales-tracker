@@ -394,15 +394,15 @@ async function generatePDF(data: MonthlyReportData) {
   // ── Variety Breakdown ──────────────────────────────────────────────────────
   section("Variety Breakdown")
   {
-    const totalC = data.varietyBreakdown.reduce((s,v)=>s+v.containers,0)
     const totalM = data.varietyBreakdown.reduce((s,v)=>s+v.mts,0)
     const totalA = data.varietyBreakdown.reduce((s,v)=>s+v.amount,0)
+    const mtsShare = (m:number) => totalM>0 ? `${((m/totalM)*100).toFixed(1)}%` : "—"
     tbl(
-      [["Variety", "Containers", "Metric Tonnes", "Revenue", "Share %"]],
-      data.varietyBreakdown.map(v => [v.variety, fmt(v.containers,1), fmt(v.mts,1), fmtUSD(v.amount), `${v.containersPct}%`]) as any,
-      { 0:{fontStyle:"bold"}, 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"} },
+      [["Variety", "Qty MTs", "Revenue", "Share %"]],
+      data.varietyBreakdown.map(v => [v.variety, fmt(v.mts,1), fmtUSD(v.amount), mtsShare(v.mts)]) as any,
+      { 0:{fontStyle:"bold"}, 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"} },
       undefined, undefined,
-      [["GRAND TOTAL", fmt(totalC,1), fmt(totalM,1), fmtUSD(totalA), "100%"]],
+      [["GRAND TOTAL", fmt(totalM,1), fmtUSD(totalA), "100%"]],
     )
   }
 
@@ -413,12 +413,12 @@ async function generatePDF(data: MonthlyReportData) {
     doc.text(`  ${v.variety} — Description Breakdown`, ML + 3, y + 3)
     y += 6
     tbl(
-      [["Description", "Containers", "MTs", "Revenue"]],
-      v.descriptions.map(d => [d.description, fmt(d.containers,1), fmt(d.mts,1), fmtUSD(d.amount)]) as any,
-      { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"} },
+      [["Description", "Qty MTs", "Revenue"]],
+      v.descriptions.map(d => [d.description, fmt(d.mts,1), fmtUSD(d.amount)]) as any,
+      { 1:{halign:"right"}, 2:{halign:"right"} },
       [209, 250, 229],
       [5, 150, 105],
-      [["TOTAL", fmt(v.containers,1), fmt(v.mts,1), fmtUSD(v.amount)]],
+      [["TOTAL", fmt(v.mts,1), fmtUSD(v.amount)]],
     )
   }
 
@@ -775,18 +775,21 @@ export function ReportClient({ userRole }: { userRole: string }) {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
 
             {/* Variety */}
-            {data.varietyBreakdown.length > 0 && (
-              <Section title="🌾 Variety Breakdown" sub="Click a variety to see description detail">
+            {data.varietyBreakdown.length > 0 && (() => {
+              const totalVarMts = data.varietyBreakdown.reduce((s,v)=>s+v.mts,0)
+              const mtsPct = (m:number) => totalVarMts>0 ? (m/totalVarMts)*100 : 0
+              return (
+              <Section title="🌾 Variety Breakdown" sub="Click a variety to see description detail · Qty in MTs">
                 <div className="flex items-start gap-4">
                   <ResponsiveContainer width={120} height={120}>
                     <PieChart>
-                      <Pie data={data.varietyBreakdown} dataKey="containers" nameKey="variety"
+                      <Pie data={data.varietyBreakdown} dataKey="mts" nameKey="variety"
                         cx="50%" cy="50%" outerRadius={55} innerRadius={28}>
                         {data.varietyBreakdown.map((_,i)=>(
                           <Cell key={i} fill={VARIETY_COLORS[i%VARIETY_COLORS.length]}/>
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v:any)=>[`${fmt(Number(v),1)} ctrs`]}/>
+                      <Tooltip formatter={(v:any)=>[`${fmt(Number(v),1)} MTs`]}/>
                     </PieChart>
                   </ResponsiveContainer>
 
@@ -795,7 +798,7 @@ export function ReportClient({ userRole }: { userRole: string }) {
                       <thead>
                         <tr className="text-gray-400">
                           <th className="text-left pb-1.5">Variety</th>
-                          <th className="text-right pb-1.5">Ctrs</th>
+                          <th className="text-right pb-1.5">Qty MTs</th>
                           <th className="text-right pb-1.5">Revenue</th>
                           <th className="text-right pb-1.5">Share</th>
                           <th className="pb-1.5"/>
@@ -812,12 +815,12 @@ export function ReportClient({ userRole }: { userRole: string }) {
                                   style={{background:VARIETY_COLORS[i%VARIETY_COLORS.length]}}/>
                                 {v.variety}
                               </td>
-                              <td className="py-2 text-right font-bold text-slate-900">{fmt(v.containers,1)}</td>
+                              <td className="py-2 text-right font-bold text-slate-900">{fmt(v.mts,1)}</td>
                               <td className="py-2 text-right text-gray-500">{fmtUSD(v.amount)}</td>
                               <td className="py-2 text-right">
                                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
                                   style={{background:VARIETY_COLORS[i%VARIETY_COLORS.length]+"22",color:VARIETY_COLORS[i%VARIETY_COLORS.length]}}>
-                                  {v.containersPct}%
+                                  {mtsPct(v.mts).toFixed(1)}%
                                 </span>
                               </td>
                               <td className="py-2 text-center text-gray-300 text-xs">
@@ -828,10 +831,10 @@ export function ReportClient({ userRole }: { userRole: string }) {
                             {openDesc===v.variety && v.descriptions.map(d=>(
                               <tr key={d.description} className="bg-gray-50">
                                 <td className="py-1.5 pl-5 text-gray-500 italic" colSpan={1}>↳ {d.description}</td>
-                                <td className="py-1.5 text-right text-gray-600">{fmt(d.containers,1)}</td>
+                                <td className="py-1.5 text-right text-gray-600">{fmt(d.mts,1)}</td>
                                 <td className="py-1.5 text-right text-gray-400">{fmtUSD(d.amount)}</td>
                                 <td className="py-1.5 text-right text-gray-400 text-[10px]">
-                                  {v.containers>0?`${((d.containers/v.containers)*100).toFixed(0)}%`:"—"}
+                                  {v.mts>0?`${((d.mts/v.mts)*100).toFixed(0)}%`:"—"}
                                 </td>
                                 <td/>
                               </tr>
@@ -843,7 +846,8 @@ export function ReportClient({ userRole }: { userRole: string }) {
                   </div>
                 </div>
               </Section>
-            )}
+              )
+            })()}
 
             {/* Meetings Summary Card */}
             <Section title="🤝 Meetings Done" sub={data.calendarMonthYear}>
