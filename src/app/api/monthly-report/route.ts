@@ -10,7 +10,10 @@
 
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { getPIRecords, get8020Buyers, getMeetingSchedules, filterPIByFY, sumContainers } from "@/lib/data"
+import {
+  getPIRecords, get8020Buyers, getMeetingSchedules, filterPIByFY, sumContainers,
+  getTargetRecords, getCountryTargets,
+} from "@/lib/data"
 import { getCurrentFY, parsePIDate } from "@/lib/fy-utils"
 import type { FinancialYear } from "@/types"
 
@@ -92,8 +95,9 @@ export async function GET(req: Request) {
 
   if (selectedMonths.length === 0) selectedMonths.push(1)
 
-  const [allPI, buyers8020, meetingSchedules] = await Promise.all([
+  const [allPI, buyers8020, meetingSchedules, targetRecords, countryTargets] = await Promise.all([
     getPIRecords(), get8020Buyers(), getMeetingSchedules(),
+    getTargetRecords(fy), getCountryTargets(),
   ])
 
   const fyPI = filterPIByFY(allPI, fy)
@@ -122,10 +126,23 @@ export async function GET(req: Request) {
   const totalMonthlyTarget = parseFloat((perMonthTarget * selectedMonths.length).toFixed(2))
 
   // ── Country target map ─────────────────────────────────────────────────────
+  // Authoritative source = TARGET_MASTER (buyer-level annual targets summed per
+  // country), same as the Country Strategy page. Scaled to the selected months
+  // (annual / 12 × N months). Falls back to the country business plan (planned2026)
+  // for countries that have no buyer-level target rows.
+  const monthFactor = selectedMonths.length / 12
   const countryTargetMap = new Map<string, number>()
-  for (const b of monitored) {
-    const cKey = b.country.toUpperCase().trim()
-    countryTargetMap.set(cKey, (countryTargetMap.get(cKey) ?? 0) + (b.annualTarget / 12) * selectedMonths.length)
+  for (const t of targetRecords) {
+    const cKey = (t.countries ?? "").toUpperCase().trim()
+    if (!cKey) continue
+    countryTargetMap.set(cKey, (countryTargetMap.get(cKey) ?? 0) + t.currentYearTargetContainers * monthFactor)
+  }
+  for (const cp of countryTargets) {
+    const cKey = (cp.country ?? "").toUpperCase().trim()
+    if (!cKey) continue
+    if (!countryTargetMap.has(cKey) && cp.planned2026 > 0) {
+      countryTargetMap.set(cKey, cp.planned2026 * monthFactor)
+    }
   }
 
   // ── Totals ─────────────────────────────────────────────────────────────────
