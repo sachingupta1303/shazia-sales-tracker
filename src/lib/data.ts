@@ -891,6 +891,7 @@ export async function updateCanonicalBuyer(
       notes:              updates.notes        ?? "",
     }
     await addCanonicalBuyer(buyer)
+    invalidateMemo("canonical_buyers", "buyer_alias_map")
     return true
   }
 
@@ -919,6 +920,7 @@ export async function updateCanonicalBuyer(
   setCell("notes",              updates.notes)
 
   await updateSheetRow(SHEETS.CANONICAL_MAP, SHEET_NAMES.CANONICAL_BUYER_MASTER, rowIdx, updated)
+  invalidateMemo("canonical_buyers", "buyer_alias_map")
   return true
 }
 
@@ -1092,6 +1094,7 @@ export async function setCountryStrategy(params: {
       params.updatedBy,
       now,
     ]])
+    invalidateMemo("country_strategies")
     return true
   }
 
@@ -1111,6 +1114,7 @@ export async function setCountryStrategy(params: {
   setCell("updatedAt", now)
 
   await updateSheetRow(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_STRATEGIES, rowIdx, updated)
+  invalidateMemo("country_strategies")
   return true
 }
 
