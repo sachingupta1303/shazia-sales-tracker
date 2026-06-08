@@ -5,6 +5,12 @@ export const metadata = { title: "Admin | Shazia Rice" }
 
 const ADMIN_TOOLS = [
   {
+    title:       "🎛️ Control Panel",
+    description: "One place to edit targets, buyer tiers/VIP, and meeting schedules — saves to sheet, reflects everywhere",
+    href:        "/admin/control-panel",
+    icon:        "🎛️",
+  },
+  {
     title:       "Buyer Ownership",
     description: "Reassign primary or backup owners · view reassignment history",
     href:        "/admin/ownership",

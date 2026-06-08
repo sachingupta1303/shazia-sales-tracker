@@ -790,6 +790,45 @@ export async function updateBuyerTarget(params: {
     params.reason,
   ]])
 
+  invalidateMemo("target_records")
+  return { ok: true, oldTarget }
+}
+
+/**
+ * Update a country's business-plan target (COUNTRY_TARGET sheet, "2026 PLANNED").
+ * This is the country-level plan number used as the country target where no
+ * buyer-level targets exist. Matches the row by the County/Country column.
+ */
+export async function updateCountryTarget(params: {
+  country:   string
+  planned2026: number
+}): Promise<{ ok: boolean; oldTarget: number; reason?: string }> {
+  const rows = await readSheet(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_TARGET)
+  if (!rows.length) return { ok: false, oldTarget: 0, reason: "empty_sheet" }
+
+  const [headerRow, ...dataRows] = rows
+  const h = buildHeaderMap(headerRow)
+
+  const countryIdx = h["County"] ?? h["Country"]
+  const targetIdx  = h["2026 PLANNED"]
+  if (countryIdx === undefined || targetIdx === undefined) {
+    return { ok: false, oldTarget: 0, reason: "missing_columns" }
+  }
+
+  const wanted = params.country.trim().toLowerCase()
+  const matchIdx = dataRows.findIndex(
+    (r) => (r[countryIdx] ?? "").trim().toLowerCase() === wanted
+  )
+  if (matchIdx === -1) return { ok: false, oldTarget: 0, reason: "row_not_found" }
+
+  const rowIndex  = matchIdx + 2  // header + 1-based
+  const oldTarget = parseFloat(dataRows[matchIdx][targetIdx] ?? "0") || 0
+
+  const updated = [...dataRows[matchIdx]]
+  updated[targetIdx] = String(params.planned2026)
+  await updateSheetRow(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_TARGET, rowIndex, updated)
+  invalidateSheetCache(SHEETS.BUSINESS_PLAN, SHEET_NAMES.COUNTRY_TARGET)
+
   return { ok: true, oldTarget }
 }
 

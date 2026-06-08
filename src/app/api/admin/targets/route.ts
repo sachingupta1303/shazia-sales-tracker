@@ -18,6 +18,7 @@ import type { AppUser, FinancialYear } from "@/types"
 
 function requireManager(user: AppUser) {
   return user.role === "MANAGER" || user.role === "DIRECTOR"
+    || user.role === "SUPER_ADMIN" || user.role === "ADMIN"
 }
 
 // ── GET ────────────────────────────────────────────────────────────────────────
