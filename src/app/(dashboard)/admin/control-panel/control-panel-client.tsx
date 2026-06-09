@@ -19,7 +19,7 @@ type TargetSub = "buyer" | "country"
 const MAIN_TABS: { key: MainTab; label: string; icon: string; ready: boolean }[] = [
   { key: "targets",  label: "Targets",  icon: "🎯", ready: true  },
   { key: "buyers",   label: "Buyers · Tier · VIP", icon: "👥", ready: true  },
-  { key: "meetings", label: "Meetings", icon: "🤝", ready: false },
+  { key: "meetings", label: "Meetings", icon: "🤝", ready: true  },
 ]
 
 export function ControlPanelClient({ userRole }: { userRole: string }) {
@@ -47,7 +47,7 @@ export function ControlPanelClient({ userRole }: { userRole: string }) {
 
       {tab === "targets"  && <TargetsTab />}
       {tab === "buyers"   && <BuyersTab />}
-      {tab === "meetings" && <ComingSoon what="Per-buyer meeting reschedule & bulk date-shift" />}
+      {tab === "meetings" && <MeetingsTab />}
     </div>
   )
 }
@@ -482,6 +482,201 @@ function BuyersTab() {
                     >
                       ⭐
                     </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEETINGS TAB — reschedule + bulk date-shift
+// ══════════════════════════════════════════════════════════════════════════════
+interface MeetingRow {
+  id: string; buyerName: string; country: string; tier: string
+  responsiblePerson: string; lastMeetingDate: string | null
+  nextDueDate: string; displayStatus: string; daysRemaining: number
+}
+
+const MEETING_STATUS_STYLE: Record<string, string> = {
+  OVERDUE:  "bg-red-50 text-red-600 border-red-200",
+  DUE_SOON: "bg-amber-50 text-amber-700 border-amber-200",
+  UPCOMING: "bg-emerald-50 text-emerald-700 border-emerald-200",
+}
+
+function MeetingsTab() {
+  const [rows, setRows]       = useState<MeetingRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr]         = useState<string | null>(null)
+  const [search, setSearch]   = useState("")
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [shiftDays, setShiftDays] = useState(7)
+  const [busy, setBusy]       = useState(false)
+  const [toast, setToast]     = useState<string | null>(null)
+  const [rowDate, setRowDate] = useState<Record<string, string>>({})
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null)
+    try {
+      const res = await fetch("/api/admin/meetings")
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`)
+      const data = await res.json()
+      setRows(data.rows); setSelected(new Set())
+    } catch (e: any) { setErr(e.message || "Failed to load") }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
+
+  // Count meetings per due-date so same-date clusters are visible
+  const dateCount: Record<string, number> = {}
+  for (const r of rows) dateCount[r.nextDueDate] = (dateCount[r.nextDueDate] ?? 0) + 1
+
+  const filtered = rows.filter((r) =>
+    !search ||
+    r.buyerName.toLowerCase().includes(search.toLowerCase()) ||
+    r.country.toLowerCase().includes(search.toLowerCase()) ||
+    r.nextDueDate.includes(search)
+  )
+
+  const toggle = (id: string) =>
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleAll = () =>
+    setSelected((prev) => prev.size === filtered.length ? new Set() : new Set(filtered.map((r) => r.id)))
+  const selectDate = (date: string) =>
+    setSelected(new Set(rows.filter((r) => r.nextDueDate === date).map((r) => r.id)))
+
+  const rescheduleOne = async (row: MeetingRow) => {
+    const newDueDate = rowDate[row.id]
+    if (!newDueDate) { flash("⚠️ Pick a date first"); return }
+    setBusy(true)
+    try {
+      const res = await fetch("/api/admin/meetings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "single", meetingId: row.id, newDueDate }),
+      })
+      if (!res.ok) { flash("⚠️ " + ((await res.json().catch(() => ({}))).error || "Reschedule failed")); return }
+      flash(`✅ ${row.buyerName} → ${newDueDate}`)
+      await load()
+    } catch { flash("⚠️ Reschedule failed") }
+    finally { setBusy(false) }
+  }
+
+  const bulkShift = async () => {
+    if (!selected.size) { flash("⚠️ Select meetings first"); return }
+    if (!shiftDays)     { flash("⚠️ Shift days can't be 0"); return }
+    setBusy(true)
+    try {
+      const res = await fetch("/api/admin/meetings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulkShift", meetingIds: [...selected], shiftDays }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { flash("⚠️ " + (data.error || "Bulk shift failed")); return }
+      flash(`✅ Shifted ${data.shifted}/${data.total} meetings by ${shiftDays > 0 ? "+" : ""}${shiftDays} days`)
+      await load()
+    } catch { flash("⚠️ Bulk shift failed") }
+    finally { setBusy(false) }
+  }
+
+  if (loading) return <Skeleton />
+  if (err)     return <ErrBox msg={err} onRetry={load} />
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <input
+          value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search buyer / country / date (YYYY-MM-DD)…"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-72 focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
+        <span className="text-xs text-gray-400">{filtered.length} meetings · sorted by due date</span>
+      </div>
+
+      {/* Bulk shift bar */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-bold text-slate-700">{selected.size} selected</span>
+        <span className="text-gray-300">·</span>
+        <label className="text-xs text-gray-600">Shift by</label>
+        <input type="number" value={shiftDays} onChange={(e) => setShiftDays(parseInt(e.target.value) || 0)}
+          className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500" />
+        <span className="text-xs text-gray-500">days (Sundays skipped)</span>
+        <div className="flex gap-1">
+          {[-7, -3, -1, 1, 3, 7].map((d) => (
+            <button key={d} onClick={() => setShiftDays(d)}
+              className={`text-[11px] px-2 py-1 rounded-lg border ${shiftDays === d ? "bg-green-600 text-white border-green-600" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+              {d > 0 ? `+${d}` : d}
+            </button>
+          ))}
+        </div>
+        <button onClick={bulkShift} disabled={busy || !selected.size}
+          className="text-sm px-4 py-1.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-40 ml-auto">
+          {busy ? "Working…" : `Shift ${selected.size} meeting${selected.size === 1 ? "" : "s"}`}
+        </button>
+      </div>
+
+      {toast && <div className="bg-slate-900 text-white text-xs rounded-lg px-3 py-2 inline-block">{toast}</div>}
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-900 text-white text-xs uppercase tracking-wide">
+              <th className="px-3 py-2.5 text-center">
+                <input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} />
+              </th>
+              <th className="px-3 py-2.5 text-left">Buyer</th>
+              <th className="px-3 py-2.5 text-left">Country</th>
+              <th className="px-3 py-2.5 text-center">Tier</th>
+              <th className="px-3 py-2.5 text-left">Last Meeting</th>
+              <th className="px-3 py-2.5 text-left">Next Due</th>
+              <th className="px-3 py-2.5 text-center">Status</th>
+              <th className="px-3 py-2.5 text-left">Reschedule to</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r, i) => {
+              const cluster = dateCount[r.nextDueDate] > 1
+              return (
+                <tr key={r.id} className={`border-b border-gray-100 ${selected.has(r.id) ? "bg-green-50/60" : i % 2 ? "bg-slate-50/50" : ""}`}>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+                  </td>
+                  <td className="px-3 py-2 font-semibold text-slate-900">{r.buyerName}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.country}</td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${TIER_STYLE[r.tier] ?? TIER_STYLE.OTHERS}`}>{r.tier}</span>
+                  </td>
+                  <td className="px-3 py-2 text-gray-500 text-xs">{r.lastMeetingDate || "—"}</td>
+                  <td className="px-3 py-2 text-xs">
+                    <span className="font-semibold text-slate-800">{r.nextDueDate || "—"}</span>
+                    {cluster && (
+                      <button onClick={() => selectDate(r.nextDueDate)}
+                        title="Select all meetings on this date"
+                        className="ml-1.5 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full hover:bg-amber-100">
+                        {dateCount[r.nextDueDate]} on this day
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${MEETING_STATUS_STYLE[r.displayStatus] ?? "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                      {r.displayStatus}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1.5">
+                      <input type="date" value={rowDate[r.id] ?? ""} disabled={busy}
+                        onChange={(e) => setRowDate((p) => ({ ...p, [r.id]: e.target.value }))}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      <button onClick={() => rescheduleOne(r)} disabled={busy || !rowDate[r.id]}
+                        className="text-xs px-2.5 py-1 rounded-lg bg-green-50 text-green-700 font-semibold hover:bg-green-100 disabled:opacity-40">
+                        Set
+                      </button>
+                    </div>
                   </td>
                 </tr>
               )
