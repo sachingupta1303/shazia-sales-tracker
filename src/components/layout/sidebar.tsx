@@ -68,12 +68,6 @@ const NAV_ITEMS = [
     roles: ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"],
   },
   {
-    label: "Control Panel",
-    href: "/admin/control-panel",
-    icon: "🎛️",
-    roles: ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN"],
-  },
-  {
     label: "Admin",
     href: "/admin",
     icon: "⚙️",
