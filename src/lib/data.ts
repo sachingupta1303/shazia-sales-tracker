@@ -1712,6 +1712,62 @@ export async function get8020Buyers(): Promise<Buyer8020[]> {
   })
 }
 
+/**
+ * Update a buyer's TIER in the 80/20 buyers sheet (Tier / Classification column).
+ * Matched by buyer name (+ country when provided). Because meeting cadence
+ * (TIER1=15, TIER2=20, TIER3=30 days) is derived from this tier at read time,
+ * changing it here makes future meeting due-dates follow the new cadence.
+ */
+export async function updateBuyer8020Tier(params: {
+  buyerName: string
+  country?:  string
+  tier:      "TIER1" | "TIER2" | "TIER3" | "OTHERS"
+}): Promise<{ ok: boolean; oldTier?: string; reason?: string }> {
+  const tabName = await findExistingTab(SHEETS.EIGHTY_TWENTY, [
+    SHEET_NAMES.EIGHTY_TWENTY_BUYERS,
+    "80/20 Buyers", "80/20 buyers", "80/20", "80-20 buyers", "8020 buyers", "EIGHTY_TWENTY_BUYERS",
+  ])
+  if (!tabName) return { ok: false, reason: "tab_not_found" }
+
+  const rows = await readSheet(SHEETS.EIGHTY_TWENTY, tabName)
+  if (!rows.length) return { ok: false, reason: "empty_sheet" }
+
+  const [headerRow, ...dataRows] = rows
+  const h = buildHeaderMap(headerRow)
+  const hLower: Record<string, number> = {}
+  for (const [key, idx] of Object.entries(h)) hLower[key.toLowerCase()] = idx
+  const colIdx = (...names: string[]) => {
+    for (const n of names) { const i = hLower[n.toLowerCase()]; if (i !== undefined) return i }
+    return undefined
+  }
+
+  const nameIdx = colIdx("Buyer Company Name", "Buyer Name", "Buyer", "Company Name", "Company")
+  const tierIdx = colIdx("Tier", "Classification", "Category")
+  const cntryIdx = colIdx("Countries", "Country", "Market")
+  if (nameIdx === undefined || tierIdx === undefined) return { ok: false, reason: "missing_columns" }
+
+  const wantName    = params.buyerName.trim().toLowerCase()
+  const wantCountry = (params.country ?? "").trim().toLowerCase()
+  const matchIdx = dataRows.findIndex((r) => {
+    const nameOk = (r[nameIdx] ?? "").trim().toLowerCase() === wantName
+    if (!nameOk) return false
+    if (!wantCountry || cntryIdx === undefined) return true
+    return (r[cntryIdx] ?? "").trim().toLowerCase() === wantCountry
+  })
+  if (matchIdx === -1) return { ok: false, reason: "row_not_found" }
+
+  const rowIndex = matchIdx + 2  // header + 1-based
+  const oldTier  = dataRows[matchIdx][tierIdx] ?? ""
+  const updated  = [...dataRows[matchIdx]]
+  updated[tierIdx] = params.tier
+  await updateSheetRow(SHEETS.EIGHTY_TWENTY, tabName, rowIndex, updated)
+  invalidateSheetCache(SHEETS.EIGHTY_TWENTY, tabName)
+  // Cadence + monitored set depend on tier → refresh derived caches
+  invalidateMemo("buyers_8020", "meeting_schedules", "others_buyers")
+
+  return { ok: true, oldTier }
+}
+
 // ─── 80/20 Meeting Schedule / History / Alerts (Google Sheets) ────────────────
 // Three sheet tabs (auto-created on first write in the SALES_TRACKING spreadsheet):
 //

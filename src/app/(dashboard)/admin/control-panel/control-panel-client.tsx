@@ -18,7 +18,7 @@ type TargetSub = "buyer" | "country"
 // ── Tab definitions ───────────────────────────────────────────────────────────
 const MAIN_TABS: { key: MainTab; label: string; icon: string; ready: boolean }[] = [
   { key: "targets",  label: "Targets",  icon: "🎯", ready: true  },
-  { key: "buyers",   label: "Buyers · Tier · VIP", icon: "👥", ready: false },
+  { key: "buyers",   label: "Buyers · Tier · VIP", icon: "👥", ready: true  },
   { key: "meetings", label: "Meetings", icon: "🤝", ready: false },
 ]
 
@@ -46,7 +46,7 @@ export function ControlPanelClient({ userRole }: { userRole: string }) {
       </div>
 
       {tab === "targets"  && <TargetsTab />}
-      {tab === "buyers"   && <ComingSoon what="Buyer tier & VIP/segment editing" />}
+      {tab === "buyers"   && <BuyersTab />}
       {tab === "meetings" && <ComingSoon what="Per-buyer meeting reschedule & bulk date-shift" />}
     </div>
   )
@@ -327,6 +327,169 @@ function EditCountryTargetModal({ row, onClose, onSaved }: { row: CountryTargetR
       {err && <p className="text-xs text-red-600">{err}</p>}
       <ModalActions onClose={onClose} onSave={save} saving={saving} />
     </Modal>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BUYERS TAB — Tier + Segment/VIP
+// ══════════════════════════════════════════════════════════════════════════════
+interface BuyerControlRow {
+  buyerName: string; country: string; tier: string; annualTarget: number
+  responsiblePerson: string; canonicalCode: string; segment: string; isKeyAccount: boolean
+}
+
+const TIER_STYLE: Record<string, string> = {
+  TIER1: "bg-purple-50 text-purple-700 border-purple-200",
+  TIER2: "bg-blue-50 text-blue-700 border-blue-200",
+  TIER3: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  OTHERS:"bg-gray-50 text-gray-500 border-gray-200",
+}
+const TIER_CADENCE: Record<string, string> = {
+  TIER1: "every 15 days", TIER2: "every 20 days", TIER3: "every 30 days", OTHERS: "no schedule",
+}
+
+function BuyersTab() {
+  const [rows, setRows]       = useState<BuyerControlRow[]>([])
+  const [tiers, setTiers]     = useState<string[]>([])
+  const [segments, setSegs]   = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr]         = useState<string | null>(null)
+  const [search, setSearch]   = useState("")
+  const [savingKey, setSaving]= useState<string | null>(null)
+  const [toast, setToast]     = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null)
+    try {
+      const res = await fetch("/api/admin/buyer-control")
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`)
+      const data = await res.json()
+      setRows(data.rows); setTiers(data.tiers); setSegs(data.segments)
+    } catch (e: any) { setErr(e.message || "Failed to load") }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500) }
+
+  const saveTier = async (row: BuyerControlRow, tier: string) => {
+    const key = `${row.buyerName}-tier`
+    setSaving(key)
+    try {
+      const res = await fetch("/api/admin/buyer-control", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "tier", buyerName: row.buyerName, country: row.country, tier }),
+      })
+      if (!res.ok) { flash("⚠️ " + ((await res.json().catch(() => ({}))).error || "Tier save failed")); return }
+      setRows((prev) => prev.map((r) => r.buyerName === row.buyerName && r.country === row.country ? { ...r, tier } : r))
+      flash(`✅ ${row.buyerName}: tier → ${tier} (${TIER_CADENCE[tier]})`)
+    } catch { flash("⚠️ Tier save failed") }
+    finally { setSaving(null) }
+  }
+
+  const saveSegment = async (row: BuyerControlRow, segment: string, isKeyAccount: boolean) => {
+    const key = `${row.buyerName}-seg`
+    setSaving(key)
+    try {
+      const res = await fetch("/api/admin/buyer-control", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "segment", buyerName: row.buyerName, country: row.country,
+          canonicalCode: row.canonicalCode || undefined, segment, isKeyAccount,
+        }),
+      })
+      if (!res.ok) { flash("⚠️ " + ((await res.json().catch(() => ({}))).error || "Segment save failed")); return }
+      const data = await res.json()
+      setRows((prev) => prev.map((r) => r.buyerName === row.buyerName && r.country === row.country
+        ? { ...r, segment, isKeyAccount, canonicalCode: r.canonicalCode || data.canonicalCode } : r))
+      flash(`✅ ${row.buyerName}: segment → ${segment}`)
+    } catch { flash("⚠️ Segment save failed") }
+    finally { setSaving(null) }
+  }
+
+  const filtered = rows.filter((r) =>
+    !search ||
+    r.buyerName.toLowerCase().includes(search.toLowerCase()) ||
+    r.country.toLowerCase().includes(search.toLowerCase())
+  )
+
+  if (loading) return <Skeleton />
+  if (err)     return <ErrBox msg={err} onRetry={load} />
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <input
+          value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search buyer / country…"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-64 focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
+        <span className="text-xs text-gray-400">{filtered.length} buyers · tier change updates meeting cadence automatically</span>
+      </div>
+
+      {toast && <div className="bg-slate-900 text-white text-xs rounded-lg px-3 py-2 inline-block">{toast}</div>}
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-900 text-white text-xs uppercase tracking-wide">
+              <th className="px-3 py-2.5 text-left">Buyer</th>
+              <th className="px-3 py-2.5 text-left">Country</th>
+              <th className="px-3 py-2.5 text-left">Owner</th>
+              <th className="px-3 py-2.5 text-right">Target</th>
+              <th className="px-3 py-2.5 text-left">Tier (cadence)</th>
+              <th className="px-3 py-2.5 text-left">Segment</th>
+              <th className="px-3 py-2.5 text-center">VIP / Key</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r, i) => {
+              const tierSaving = savingKey === `${r.buyerName}-tier`
+              const segSaving  = savingKey === `${r.buyerName}-seg`
+              return (
+                <tr key={`${r.buyerName}-${r.country}-${i}`} className={`border-b border-gray-100 ${i % 2 ? "bg-slate-50/50" : ""}`}>
+                  <td className="px-3 py-2 font-semibold text-slate-900">{r.buyerName}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.country}</td>
+                  <td className="px-3 py-2 text-gray-500">{r.responsiblePerson || "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">{formatNumber(r.annualTarget, 0)}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={r.tier} disabled={tierSaving}
+                        onChange={(e) => saveTier(r, e.target.value)}
+                        className={`text-xs font-bold border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500 ${TIER_STYLE[r.tier] ?? TIER_STYLE.OTHERS}`}
+                      >
+                        {tiers.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <span className="text-[10px] text-gray-400">{tierSaving ? "saving…" : TIER_CADENCE[r.tier]}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={r.segment} disabled={segSaving}
+                      onChange={(e) => saveSegment(r, e.target.value, r.isKeyAccount)}
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      {segments.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <button
+                      disabled={segSaving}
+                      onClick={() => saveSegment(r, r.segment, !r.isKeyAccount)}
+                      title="Toggle VIP / Key Account"
+                      className={`text-base transition-transform hover:scale-110 ${r.isKeyAccount ? "" : "opacity-25 grayscale"}`}
+                    >
+                      ⭐
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
 
