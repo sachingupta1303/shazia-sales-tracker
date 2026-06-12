@@ -196,8 +196,9 @@ export function renderDailyReportHtml(report: DailyReport, dateLabel: string): s
   const th = (label: string, align = "left") =>
     `<th style="padding:8px;text-align:${align};font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#cbd5e1;font-weight:700;">${label}</th>`
 
-  const overallPct = summary.yearTarget > 0
-    ? Math.round((summary.fytdActual / ((summary.yearTarget / 52) * week)) * 100) : 0
+  const tillNowTarget = (summary.yearTarget / 52) * week   // pace target till current week
+  const overallPct = tillNowTarget > 0
+    ? Math.round((summary.fytdActual / tillNowTarget) * 100) : 0
 
   return `
   <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f1f5f9;padding:18px;">
@@ -208,8 +209,9 @@ export function renderDailyReportHtml(report: DailyReport, dateLabel: string): s
       </div>
 
       <div style="display:flex;flex-wrap:wrap;gap:10px;padding:16px 22px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
-        ${summaryCard("Year Target", n0(summary.yearTarget), "#0f172a")}
-        ${summaryCard("FYTD Actual", n0(summary.fytdActual), "#059669")}
+        ${summaryCard("Total Target", n0(summary.yearTarget), "#0f172a")}
+        ${summaryCard("Total Actual", n0(summary.fytdActual), "#059669")}
+        ${summaryCard("Till-now Target", n0(tillNowTarget), "#1d4ed8")}
         ${summaryCard("Till-now %", `${overallPct}%`, overallPct >= 100 ? "#059669" : overallPct >= 70 ? "#d97706" : "#dc2626")}
         ${summaryCard("🔴 Critical", String(summary.critical), "#dc2626")}
         ${summaryCard("🟠 On Track", String(summary.onTrack), "#d97706")}
