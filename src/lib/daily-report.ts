@@ -151,7 +151,7 @@ export async function buildDailyBuyerReport(): Promise<DailyReport> {
   return { fy, week, fyMonth, monthName: FY_MONTH_NAMES[fyMonth] ?? "", rows, summary }
 }
 
-// ── HTML email renderer (mobile-first cards — no wide table, no horizontal cut) ──
+// ── HTML email renderer (table — same UI on laptop & mobile; mobile scrolls horizontally) ──
 const STATUS_LABEL: Record<DailyStatus, string> = {
   CRITICAL: "Critical", ON_TRACK: "On Track", OVER_ACHIEVED: "Over Achieved", NO_TARGET: "No Target",
 }
@@ -163,32 +163,38 @@ const TIER_CLASS: Record<string, string> = { TIER1: "t1", TIER2: "t2", TIER3: "t
 const n0 = (v: number) => Math.round(v).toLocaleString("en-IN")
 const n1 = (v: number) => v.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 1 })
 
-// Cap rows so the HTML stays under Gmail's ~102KB clip limit (sorted critical-first).
+// Cap rows so the email stays under Gmail's ~102KB clip limit (sorted critical-first).
 const MAX_EMAIL_ROWS = 150
 
 const REPORT_STYLE = `
 <style>
-  .dbr-wrap{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f1f5f9;padding:10px}
-  .dbr-card{max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0}
-  .dbr-hd{background:#059669;padding:14px 16px}
-  .dbr-hd h1{margin:0;color:#fff;font-size:16px}
-  .dbr-hd p{margin:4px 0 0;color:rgba(255,255,255,.85);font-size:11px}
-  .dbr-kpis{padding:12px 12px 6px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:0}
-  .dbr-kpi{display:inline-block;min-width:90px;vertical-align:top;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;margin:0 6px 6px 0}
+  .dbr-wrap{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f1f5f9;padding:12px}
+  .dbr-card{max-width:1000px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0}
+  .dbr-hd{background:#059669;padding:16px 20px}
+  .dbr-hd h1{margin:0;color:#fff;font-size:17px}
+  .dbr-hd p{margin:4px 0 0;color:rgba(255,255,255,.85);font-size:12px}
+  .dbr-kpis{padding:14px 16px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:0}
+  .dbr-kpi{display:inline-block;min-width:92px;vertical-align:top;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;margin:0 6px 6px 0}
   .dbr-kpi .l{font-size:9px;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;font-weight:700}
-  .dbr-kpi .v{font-size:16px;font-weight:800;margin-top:1px}
+  .dbr-kpi .v{font-size:17px;font-weight:800;margin-top:1px}
   .dbr-note{padding:8px 16px;color:#64748b;font-size:11px;line-height:1.5}
-  .row{border:1px solid #eef2f7;border-left:3px solid #cbd5e1;border-radius:8px;padding:8px 10px;margin:6px 12px}
-  .row.crit{border-left-color:#dc2626}.row.ok{border-left-color:#d97706}.row.over{border-left-color:#059669}.row.nt{border-left-color:#cbd5e1}
-  .row .nm{font-weight:700;color:#0f172a;font-size:13px}
-  .row .meta{color:#64748b;font-size:11px;margin-top:2px}
-  .row .mtx{font-size:12px;margin-top:5px;color:#334155;line-height:1.6}
-  .row .mtx b{color:#0f172a}
-  .badge{font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:5px;white-space:nowrap;margin-left:4px}
+  .dbr-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 12px 14px}
+  .dbr-tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px}
+  .dbr-tbl th{background:#0f172a;color:#cbd5e1;font-size:9.5px;text-transform:uppercase;letter-spacing:.03em;padding:8px 7px;font-weight:700;text-align:left;white-space:nowrap}
+  .dbr-tbl td{padding:7px 7px;border-bottom:1px solid #f1f5f9;color:#334155;white-space:nowrap}
+  .dbr-tbl tr:nth-child(even) td{background:#f8fafc}
+  .r{text-align:right}.c{text-align:center}
+  .nm{font-weight:600;color:#0f172a;white-space:normal}
+  .badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;white-space:nowrap}
   .crit{background:#fee2e2;color:#dc2626}.ok{background:#fef3c7;color:#d97706}.over{background:#d1fae5;color:#059669}.nt{background:#f3f4f6;color:#6b7280}
   .t1{background:#f3e8ff;color:#7c3aed}.t2{background:#dbeafe;color:#1d4ed8}.t3{background:#d1fae5;color:#059669}.to{background:#f3f4f6;color:#6b7280}
   .tc-crit{color:#dc2626}.tc-ok{color:#d97706}.tc-over{color:#059669}.tc-nt{color:#6b7280}
-  .sep{color:#cbd5e1;padding:0 4px}
+  .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap}
+  @media (max-width:600px){
+    .dbr-tbl{font-size:11.5px;min-width:680px}
+    .dbr-tbl th,.dbr-tbl td{padding:6px 5px}
+    .dbr-kpi{min-width:84px}
+  }
 </style>`
 
 function kpi(label: string, value: string, cls = ""): string {
@@ -201,22 +207,24 @@ export function renderDailyReportHtml(report: DailyReport, dateLabel: string): s
   const shown     = rows.slice(0, MAX_EMAIL_ROWS)
   const remaining = rows.length - shown.length
 
-  const cardsHtml = shown.map((r, i) => {
+  const rowsHtml = shown.map((r, i) => {
     const stCls   = STATUS_CLASS[r.status]
     const tierCls = TIER_CLASS[r.tier] ?? "to"
     const tierLbl = r.tier === "OTHERS" ? "Others" : r.tier.replace("TIER", "T")
     const pct     = r.tillNowPct === null ? "—" : `${r.tillNowPct}%`
-    return `<div class="row ${stCls}">`
-      + `<div><span style="color:#94a3b8;font-size:11px">#${i + 1}</span> `
-      + `<span class="nm">${escapeHtml(r.buyerName)}</span>`
-      + `<span class="badge ${tierCls}">${tierLbl}</span>`
-      + `<span class="badge ${stCls}">${STATUS_LABEL[r.status]}</span></div>`
-      + `<div class="meta">${escapeHtml(r.country)}<span class="sep">·</span>Year Target <b>${n0(r.yearTarget)}</b></div>`
-      + `<div class="mtx">`
-      + `Month <b>${n0(r.monthActual)}</b> / ${n1(r.monthTarget)}`
-      + `<span class="sep">·</span>Till Week <b>${n0(r.weekActual)}</b> / ${n1(r.weekTarget)}`
-      + `<span class="sep">·</span><span class="tc-${stCls}" style="font-weight:700">Till-now ${pct}</span>`
-      + `</div></div>`
+    return `<tr>`
+      + `<td class="c" style="color:#9ca3af">${i + 1}</td>`
+      + `<td class="nm">${escapeHtml(r.buyerName)}</td>`
+      + `<td>${escapeHtml(r.country)}</td>`
+      + `<td class="c"><span class="badge ${tierCls}">${tierLbl}</span></td>`
+      + `<td class="r">${n1(r.monthTarget)}</td>`
+      + `<td class="r" style="font-weight:600;color:#0f172a">${n0(r.monthActual)}</td>`
+      + `<td class="r">${n1(r.weekTarget)}</td>`
+      + `<td class="r" style="font-weight:600;color:#0f172a">${n0(r.weekActual)}</td>`
+      + `<td class="r" style="font-weight:700"><span class="tc-${stCls}">${pct}</span></td>`
+      + `<td class="c"><span class="pill ${stCls}">${STATUS_LABEL[r.status]}</span></td>`
+      + `<td class="r" style="font-weight:700;color:#0f172a">${n0(r.yearTarget)}</td>`
+      + `</tr>`
   }).join("")
 
   const tillNowTarget = (summary.yearTarget / 52) * week
@@ -239,9 +247,19 @@ export function renderDailyReportHtml(report: DailyReport, dateLabel: string): s
       ${kpi("🟠 On Track", String(summary.onTrack), "tc-ok")}
       ${kpi("🟢 Over Ach.", String(summary.overAchieved), "tc-over")}
     </div>
-    <div class="dbr-note">Sort: <b>Critical first</b> → key accounts (T1→T2→T3→Others) → poorest %. Till-now % = Till Week actual ÷ Till Week target (pace).</div>
-    <div style="padding:2px 0 10px">${cardsHtml}</div>
-    ${remaining > 0 ? `<div style="padding:4px 16px 14px;color:#64748b;font-size:12px">+ ${remaining} more buyers — <a href="${moreLink}" style="color:#059669;font-weight:700">open full report in app</a></div>` : ""}
+    <div class="dbr-note">Sort: <b>Critical first</b> → key accounts (T1→T2→T3→Others) → poorest %. Till-now % = Till Week actual ÷ Till Week target (pace). <i>Mobile: table side me scroll hoti hai.</i></div>
+    <div class="dbr-scroll">
+      <table class="dbr-tbl">
+        <thead><tr>
+          <th class="c">#</th><th>Buyer</th><th>Country</th><th class="c">Tier</th>
+          <th class="r">Month Tgt</th><th class="r">Month Act</th>
+          <th class="r">Till Week Tgt</th><th class="r">Till Week Act</th>
+          <th class="r">Till-now %</th><th class="c">Status</th><th class="r">Year Tgt</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    ${remaining > 0 ? `<div style="padding:0 16px 14px;color:#64748b;font-size:12px">+ ${remaining} more buyers — <a href="${moreLink}" style="color:#059669;font-weight:700">open full report in app</a></div>` : ""}
     <div style="padding:12px 16px;background:#f8fafc;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:10.5px">Auto-generated by Shazia Rice Sales Tracker · ${escapeHtml(dateLabel)}</div>
   </div></div>`
 }
