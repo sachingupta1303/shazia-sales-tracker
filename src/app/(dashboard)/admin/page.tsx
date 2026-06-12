@@ -11,6 +11,12 @@ const ADMIN_TOOLS = [
     icon:        "🎛️",
   },
   {
+    title:       "📊 Daily Buyer Report",
+    description: "Critical-first buyer performance (month + till-week) · preview & email to yourself or the director",
+    href:        "/admin/daily-report",
+    icon:        "📊",
+  },
+  {
     title:       "Buyer Ownership",
     description: "Reassign primary or backup owners · view reassignment history",
     href:        "/admin/ownership",
