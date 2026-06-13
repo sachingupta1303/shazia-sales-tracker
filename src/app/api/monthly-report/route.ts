@@ -14,7 +14,7 @@ import {
   getPIRecords, get8020Buyers, getMeetingSchedules, filterPIByFY, sumContainers,
   getTargetRecords, getCountryTargets,
 } from "@/lib/data"
-import { getCurrentFY, parsePIDate } from "@/lib/fy-utils"
+import { getCurrentFY, parsePIDate, getFYWeek } from "@/lib/fy-utils"
 import type { FinancialYear } from "@/types"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,6 +95,16 @@ export async function GET(req: Request) {
 
   if (selectedMonths.length === 0) selectedMonths.push(1)
 
+  // Optional WEEK filter — ?weeks=10,11 (FY week numbers). When present it takes
+  // precedence over months: the report is scoped to those specific FY weeks.
+  const rawWeeks = url.searchParams.get("weeks") || url.searchParams.get("week") || ""
+  const selectedWeeks = [...new Set(
+    rawWeeks.split(",")
+      .map(w => parseInt(w.trim(), 10))
+      .filter(w => !isNaN(w) && w >= 1 && w <= 53)
+  )].sort((a, b) => a - b)
+  const weekMode = selectedWeeks.length > 0
+
   const [allPI, buyers8020, meetingSchedules, targetRecords, countryTargets] = await Promise.all([
     getPIRecords(), get8020Buyers(), getMeetingSchedules(),
     getTargetRecords(fy), getCountryTargets(),
@@ -105,43 +115,52 @@ export async function GET(req: Request) {
   // Collect all calendar month+year combos for the selected FY months
   const calendarMonths = selectedMonths.map(m => fyMonthToCalendar(m, fy))
 
-  // Filter PI records matching any of the selected months
-  const monthPI = fyPI.filter((r) => {
-    if (r.fyMonthNo > 0) return selectedMonths.includes(r.fyMonthNo)
-    const d = parsePIDate(r.piDate)
-    if (isNaN(d.getTime())) return false
-    return calendarMonths.some(({ month, year }) =>
-      d.getMonth() === month && d.getFullYear() === year
-    )
-  })
+  // Week of a PI record (prefer the stored fyWeekNo, else derive from the date)
+  const piWeek = (r: { fyWeekNo: number; piDate: string }) =>
+    r.fyWeekNo > 0 ? r.fyWeekNo : getFYWeek(parsePIDate(r.piDate), fy)
+
+  // Filter PI records: by selected weeks (week mode) OR selected months
+  const monthPI = weekMode
+    ? fyPI.filter((r) => selectedWeeks.includes(piWeek(r)))
+    : fyPI.filter((r) => {
+        if (r.fyMonthNo > 0) return selectedMonths.includes(r.fyMonthNo)
+        const d = parsePIDate(r.piDate)
+        if (isNaN(d.getTime())) return false
+        return calendarMonths.some(({ month, year }) =>
+          d.getMonth() === month && d.getFullYear() === year
+        )
+      })
 
   const norm = (s: string) => s.toLowerCase().trim()
 
+  // Fraction of the year covered by the selected period (weeks ÷ 52 or months ÷ 12).
+  // All targets are the annual target × this fraction.
+  const periodFraction = weekMode ? selectedWeeks.length / 52 : selectedMonths.length / 12
+
   // ── 80/20 buyer lookup ─────────────────────────────────────────────────────
-  const buyerMap             = new Map(buyers8020.map((b) => [norm(b.buyerName), b]))
-  const monthlyTargetByBuyer = new Map(buyers8020.map((b) => [norm(b.buyerName), b.annualTarget / 12]))
+  const buyerMap            = new Map(buyers8020.map((b) => [norm(b.buyerName), b]))
+  const annualTargetByBuyer = new Map(buyers8020.map((b) => [norm(b.buyerName), b.annualTarget]))
 
   const monitored          = buyers8020.filter((b) => b.tier !== "OTHERS")
-  const perMonthTarget     = monitored.reduce((s, b) => s + b.annualTarget / 12, 0)
-  const totalMonthlyTarget = parseFloat((perMonthTarget * selectedMonths.length).toFixed(2))
+  const annualMonitored    = monitored.reduce((s, b) => s + b.annualTarget, 0)
+  const totalMonthlyTarget = parseFloat((annualMonitored * periodFraction).toFixed(2))
 
   // ── Country target map ─────────────────────────────────────────────────────
   // Authoritative source = TARGET_MASTER (buyer-level annual targets summed per
   // country), same as the Country Strategy page. Scaled to the selected months
   // (annual / 12 × N months). Falls back to the country business plan (planned2026)
   // for countries that have no buyer-level target rows.
-  const monthFactor = selectedMonths.length / 12
   const countryTargetMap = new Map<string, number>()
   for (const t of targetRecords) {
     const cKey = (t.countries ?? "").toUpperCase().trim()
     if (!cKey) continue
-    countryTargetMap.set(cKey, (countryTargetMap.get(cKey) ?? 0) + t.currentYearTargetContainers * monthFactor)
+    countryTargetMap.set(cKey, (countryTargetMap.get(cKey) ?? 0) + t.currentYearTargetContainers * periodFraction)
   }
   for (const cp of countryTargets) {
     const cKey = (cp.country ?? "").toUpperCase().trim()
     if (!cKey) continue
     if (!countryTargetMap.has(cKey) && cp.planned2026 > 0) {
-      countryTargetMap.set(cKey, cp.planned2026 * monthFactor)
+      countryTargetMap.set(cKey, cp.planned2026 * periodFraction)
     }
   }
 
@@ -274,7 +293,7 @@ export async function GET(req: Request) {
   const buyerBreakdown = [...buyerSalesMap.entries()]
     .map(([key, data]) => {
       const b80    = buyerMap.get(key)
-      const target = (monthlyTargetByBuyer.get(key) ?? 0) * selectedMonths.length
+      const target = (annualTargetByBuyer.get(key) ?? 0) * periodFraction
       return {
         buyerName:         key.replace(/\b\w/g, (c) => c.toUpperCase()),
         country:           data.country,
@@ -306,21 +325,39 @@ export async function GET(req: Request) {
     for (const h of sched.history) {
       const d = new Date(h.meetingDate)
       if (isNaN(d.getTime())) continue
-      if (calMonthSet.has(`${d.getFullYear()}-${d.getMonth()}`)) {
+      // Week mode → match by FY week; month mode → match by calendar month
+      const inPeriod = weekMode
+        ? selectedWeeks.includes(getFYWeek(d, fy))
+        : calMonthSet.has(`${d.getFullYear()}-${d.getMonth()}`)
+      if (inPeriod) {
         const tk = sched.tier as string
         if (tk in byTierDone) byTierDone[tk]++
       }
     }
   }
 
-  const { label: calendarMonthYear, shortLabel } = buildPeriodLabel(selectedMonths, fy)
-  const monthName = selectedMonths.length === 1
-    ? (FY_MONTH_NAMES[selectedMonths[0]] || `Month ${selectedMonths[0]}`)
-    : shortLabel
+  // Period label — week mode shows "Week N" / "Weeks N–M", else month/quarter label
+  let calendarMonthYear: string
+  let monthName: string
+  if (weekMode) {
+    const wLabel = selectedWeeks.length === 1
+      ? `Week ${selectedWeeks[0]}`
+      : `Weeks ${selectedWeeks[0]}–${selectedWeeks[selectedWeeks.length - 1]}`
+    calendarMonthYear = `${wLabel} · FY ${fy}`
+    monthName = wLabel
+  } else {
+    const { label, shortLabel } = buildPeriodLabel(selectedMonths, fy)
+    calendarMonthYear = label
+    monthName = selectedMonths.length === 1
+      ? (FY_MONTH_NAMES[selectedMonths[0]] || `Month ${selectedMonths[0]}`)
+      : shortLabel
+  }
 
   return NextResponse.json({
     fy,
     selectedMonths,
+    selectedWeeks,
+    weekMode,
     fyMonthNo:         selectedMonths[0],   // backward-compat
     monthName,
     calendarMonthYear,

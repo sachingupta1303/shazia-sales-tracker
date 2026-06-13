@@ -667,24 +667,28 @@ export function ReportClient({ userRole }: { userRole: string }) {
   const fyList  = genFYList()
   const [fy,            setFY]        = useState(getCurrentFY)
   const [selectedMonths,setMonths]    = useState<number[]>(getCurrentQuarterMonths)
+  const [week,          setWeek]      = useState<number>(0)   // 0 = All weeks (month mode)
   const [data,          setData]      = useState<MonthlyReportData|null>(null)
   const [loading,       setLoading]   = useState(false)
   const [pdfBusy,       setPdfBusy]   = useState(false)
   const [error,         setError]     = useState<string|null>(null)
   const [openDesc,      setOpenDesc]  = useState<string|null>(null)
 
-  const fetchReport = useCallback(async (f: string, months: number[]) => {
+  const fetchReport = useCallback(async (f: string, months: number[], wk: number) => {
     if (!months.length) return
     setLoading(true); setError(null)
     try {
-      const res = await fetch(`/api/monthly-report?fy=${f}&months=${months.join(",")}`)
+      const qs = wk > 0
+        ? `fy=${f}&weeks=${wk}`               // week mode overrides months
+        : `fy=${f}&months=${months.join(",")}`
+      const res = await fetch(`/api/monthly-report?${qs}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setData(await res.json())
     } catch(e:any){ setError(e.message||"Failed to load") }
     finally{ setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchReport(fy, selectedMonths) }, [fy, selectedMonths, fetchReport])
+  useEffect(() => { fetchReport(fy, selectedMonths, week) }, [fy, selectedMonths, week, fetchReport])
 
   const handleDownload = async () => {
     if (!data) return
@@ -705,11 +709,17 @@ export function ReportClient({ userRole }: { userRole: string }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <select value={fy} onChange={e=>{ setFY(e.target.value); setMonths(getCurrentQuarterMonths()) }}
+          <select value={fy} onChange={e=>{ setFY(e.target.value); setMonths(getCurrentQuarterMonths()); setWeek(0) }}
             className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
             {fyList.map(f=><option key={f} value={f}>FY {f}</option>)}
           </select>
-          <MonthPicker selectedMonths={selectedMonths} onChange={setMonths}/>
+          <MonthPicker selectedMonths={selectedMonths} onChange={(m)=>{ setMonths(m); setWeek(0) }}/>
+          <select value={week} onChange={e=>setWeek(parseInt(e.target.value,10))}
+            title="Filter by a specific FY week"
+            className={`text-sm border rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${week>0?"border-blue-400 text-blue-700 font-semibold":"border-gray-200"}`}>
+            <option value={0}>All weeks</option>
+            {Array.from({length:52},(_,i)=>i+1).map(w=><option key={w} value={w}>Week {w}</option>)}
+          </select>
           <button onClick={handleDownload} disabled={!data||loading||pdfBusy}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-40"
             style={{background:C.emerald}}>
