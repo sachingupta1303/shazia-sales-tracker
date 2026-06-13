@@ -321,6 +321,8 @@ export async function GET(req: Request) {
   // Build a Set of "calYear-calMonth" strings for fast lookup
   const calMonthSet = new Set(calendarMonths.map(({ month, year }) => `${year}-${month}`))
 
+  // Distinct buyers actually met in the period (per tier) — so done + pending = scheduled
+  const metByTier: Record<string, Set<string>> = { TIER1: new Set(), TIER2: new Set(), TIER3: new Set() }
   for (const sched of meetingSchedules) {
     for (const h of sched.history) {
       const d = new Date(h.meetingDate)
@@ -331,10 +333,22 @@ export async function GET(req: Request) {
         : calMonthSet.has(`${d.getFullYear()}-${d.getMonth()}`)
       if (inPeriod) {
         const tk = sched.tier as string
-        if (tk in byTierDone) byTierDone[tk]++
+        if (tk in byTierDone) { byTierDone[tk]++; metByTier[tk].add(sched.buyerName) }
       }
     }
   }
+
+  // Scheduled = monitored buyers on a meeting cadence; Done = distinct buyers met;
+  // Pending = scheduled − done (buyers not met in this period)
+  const tierStat = (t: "TIER1" | "TIER2" | "TIER3") => {
+    const scheduled = tierBuyerCount[t]
+    const done      = metByTier[t].size
+    return { scheduled, done, pending: Math.max(0, scheduled - done), total: scheduled }
+  }
+  const t1 = tierStat("TIER1"), t2 = tierStat("TIER2"), t3 = tierStat("TIER3")
+  const scheduledTotal = t1.scheduled + t2.scheduled + t3.scheduled
+  const doneTotal      = t1.done + t2.done + t3.done
+  const meetingsHeld   = byTierDone.TIER1 + byTierDone.TIER2 + byTierDone.TIER3
 
   // Period label — week mode shows "Week N" / "Weeks N–M", else month/quarter label
   let calendarMonthYear: string
@@ -381,12 +395,16 @@ export async function GET(req: Request) {
     buyerBreakdown,
 
     meetingsSummary: {
-      totalDone:   byTierDone.TIER1 + byTierDone.TIER2 + byTierDone.TIER3,
-      totalBuyers: monitored.length,
+      scheduled:    scheduledTotal,
+      done:         doneTotal,
+      pending:      Math.max(0, scheduledTotal - doneTotal),
+      meetingsHeld,                 // raw count of completed meetings (incl. repeats)
+      totalDone:    doneTotal,      // backward-compat
+      totalBuyers:  monitored.length,
       byTier: {
-        TIER1: { done: byTierDone.TIER1, total: tierBuyerCount.TIER1 },
-        TIER2: { done: byTierDone.TIER2, total: tierBuyerCount.TIER2 },
-        TIER3: { done: byTierDone.TIER3, total: tierBuyerCount.TIER3 },
+        TIER1: t1,
+        TIER2: t2,
+        TIER3: t3,
       },
     },
   })

@@ -12,7 +12,7 @@ interface VarietyRow      { variety: string; containers: number; mts: number; am
 interface CountryRow      { country: string; containers: number; mts: number; amount: number; buyerCount: number; pct: number; monthlyTarget: number; achievementPct: number }
 interface SPRow           { salesPerson: string; containers: number; mts: number; amount: number; share: number; buyerCount: number }
 interface BuyerRow        { buyerName: string; country: string; tier: string; responsiblePerson: string; containers: number; mts: number; amount: number; monthlyTarget: number; achievementPct: number; isIn8020: boolean }
-interface TierStat        { done: number; total: number }
+interface TierStat        { done: number; total: number; scheduled?: number; pending?: number }
 
 interface MonthlyReportData {
   fy: string; fyMonthNo: number; selectedMonths: number[]; monthName: string; calendarMonthYear: string; generatedAt: string
@@ -21,7 +21,7 @@ interface MonthlyReportData {
   countryBreakdown:      CountryRow[]
   salesPersonBreakdown:  SPRow[]
   buyerBreakdown:        BuyerRow[]
-  meetingsSummary:       { totalDone: number; totalBuyers: number; byTier: { TIER1: TierStat; TIER2: TierStat; TIER3: TierStat } }
+  meetingsSummary:       { totalDone: number; totalBuyers: number; scheduled?: number; done?: number; pending?: number; meetingsHeld?: number; byTier: { TIER1: TierStat; TIER2: TierStat; TIER3: TierStat } }
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -512,12 +512,15 @@ async function generatePDF(data: MonthlyReportData) {
   doc.setDrawColor(...BLUE2); doc.setLineWidth(0.3)
   doc.roundedRect(ML, y, mCardW, 22, 2, 2, "S")
   doc.setTextColor(255, 255, 255)
+  const msScheduled = ms.scheduled ?? ms.totalBuyers
+  const msDone      = ms.done ?? ms.totalDone
+  const msPending   = ms.pending ?? Math.max(0, msScheduled - msDone)
   doc.setFont("helvetica","bold"); doc.setFontSize(6)
-  doc.text("TOTAL DONE", ML + mCardW / 2, y + 5.5, { align:"center" })
+  doc.text("DONE / SCHEDULED", ML + mCardW / 2, y + 5.5, { align:"center" })
   doc.setFontSize(16)
-  doc.text(String(ms.totalDone), ML + mCardW / 2, y + 14, { align:"center" })
+  doc.text(`${msDone} / ${msScheduled}`, ML + mCardW / 2, y + 14, { align:"center" })
   doc.setFont("helvetica","normal"); doc.setFontSize(5.5)
-  doc.text(`/ ${ms.totalBuyers} buyers`, ML + mCardW / 2, y + 19, { align:"center" })
+  doc.text(`${msPending} pending`, ML + mCardW / 2, y + 19, { align:"center" })
 
   // Tier cards
   const tierDefs: Array<{ key:"TIER1"|"TIER2"|"TIER3"; label:string; rgb:[number,number,number] }> = [
@@ -527,7 +530,9 @@ async function generatePDF(data: MonthlyReportData) {
   ]
   tierDefs.forEach(({ key, label, rgb }, i) => {
     const stat = ms.byTier[key]
-    const pct  = stat.total > 0 ? Math.round(stat.done / stat.total * 100) : 0
+    const sched = stat.scheduled ?? stat.total
+    const pend  = stat.pending ?? Math.max(0, sched - stat.done)
+    const pct  = sched > 0 ? Math.round(stat.done / sched * 100) : 0
     const cx   = ML + (i + 1) * (mCardW + 2)
     // shadow
     doc.setFillColor(200, 210, 220)
@@ -552,7 +557,7 @@ async function generatePDF(data: MonthlyReportData) {
     // sub
     doc.setFont("helvetica","normal"); doc.setFontSize(5.5)
     doc.setTextColor(107, 114, 128)
-    doc.text(`/ ${stat.total} buyers  ·  ${pct}%`, cx + mCardW / 2, y + 19.5, { align:"center" })
+    doc.text(`/ ${sched}  ·  ${pend} pending  ·  ${pct}%`, cx + mCardW / 2, y + 19.5, { align:"center" })
   })
   y += 26
 
@@ -860,28 +865,49 @@ export function ReportClient({ userRole }: { userRole: string }) {
             })()}
 
             {/* Meetings Summary Card */}
-            <Section title="🤝 Meetings Done" sub={data.calendarMonthYear}>
+            <Section title="🤝 Meetings" sub={`${data.calendarMonthYear} · scheduled vs done vs pending`}>
               <div className="space-y-4">
-                {/* Total card */}
-                <div className="rounded-xl p-4 text-center"
-                  style={{background:"linear-gradient(135deg,#059669,#047857)"}}>
-                  <p className="text-white/70 text-xs font-semibold uppercase tracking-wider">Total Meetings Done</p>
-                  <p className="text-white text-4xl font-bold mt-1">{data.meetingsSummary.totalDone}</p>
-                  <p className="text-white/60 text-xs mt-1">out of {data.meetingsSummary.totalBuyers} monitored buyers</p>
-                </div>
+                {/* Scheduled / Done / Pending headline */}
+                {(() => {
+                  const ms        = data.meetingsSummary
+                  const scheduled = ms.scheduled ?? ms.totalBuyers
+                  const done      = ms.done ?? ms.totalDone
+                  const pending   = ms.pending ?? Math.max(0, scheduled - done)
+                  return (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-xl p-4 text-center text-white" style={{background:"linear-gradient(135deg,#0f172a,#334155)"}}>
+                        <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider">Scheduled</p>
+                        <p className="text-3xl font-bold mt-1">{scheduled}</p>
+                        <p className="text-white/60 text-[10px] mt-0.5">monitored buyers</p>
+                      </div>
+                      <div className="rounded-xl p-4 text-center text-white" style={{background:"linear-gradient(135deg,#059669,#047857)"}}>
+                        <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider">Done</p>
+                        <p className="text-3xl font-bold mt-1">{done}</p>
+                        <p className="text-white/60 text-[10px] mt-0.5">{ms.meetingsHeld && ms.meetingsHeld!==done ? `${ms.meetingsHeld} meetings held` : "buyers met"}</p>
+                      </div>
+                      <div className="rounded-xl p-4 text-center text-white" style={{background:"linear-gradient(135deg,#dc2626,#b91c1c)"}}>
+                        <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider">Pending</p>
+                        <p className="text-3xl font-bold mt-1">{pending}</p>
+                        <p className="text-white/60 text-[10px] mt-0.5">not met yet</p>
+                      </div>
+                    </div>
+                  )
+                })()}
 
-                {/* Tier cards row */}
+                {/* Tier cards row — done / pending out of scheduled */}
                 <div className="grid grid-cols-3 gap-3">
                   {(["TIER1","TIER2","TIER3"] as const).map(tier=>{
-                    const stat = data.meetingsSummary.byTier[tier]
-                    const pct  = stat.total>0?Math.round(stat.done/stat.total*100):0
+                    const stat      = data.meetingsSummary.byTier[tier]
+                    const scheduled = stat.scheduled ?? stat.total
+                    const pending   = stat.pending ?? Math.max(0, scheduled - stat.done)
+                    const pct  = scheduled>0?Math.round(stat.done/scheduled*100):0
                     const bg   = tier==="TIER1"?C.purpleL:tier==="TIER2"?C.blueL:C.emeraldL
                     const col  = tier==="TIER1"?C.purple:tier==="TIER2"?C.blue:C.emerald
                     return (
                       <div key={tier} className="rounded-xl border p-3 text-center" style={{background:bg,borderColor:col+"33"}}>
                         <p className="text-[10px] font-bold uppercase" style={{color:col}}>{tier}</p>
-                        <p className="text-2xl font-bold mt-1" style={{color:col}}>{stat.done}</p>
-                        <p className="text-[10px] mt-0.5" style={{color:col+"99"}}>/ {stat.total} buyers</p>
+                        <p className="text-2xl font-bold mt-1" style={{color:col}}>{stat.done}<span className="text-sm font-semibold opacity-60"> / {scheduled}</span></p>
+                        <p className="text-[10px] mt-0.5" style={{color:col+"99"}}>done · {pending} pending</p>
                         <div className="mt-2 bg-white/60 rounded-full h-1.5 overflow-hidden">
                           <div className="h-1.5 rounded-full" style={{width:`${pct}%`,background:col}}/>
                         </div>
