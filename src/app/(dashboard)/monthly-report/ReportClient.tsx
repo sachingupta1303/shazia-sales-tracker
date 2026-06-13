@@ -878,12 +878,12 @@ export function ReportClient({ userRole }: { userRole: string }) {
                       <div className="rounded-xl p-4 text-center text-white" style={{background:"linear-gradient(135deg,#0f172a,#334155)"}}>
                         <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider">Scheduled</p>
                         <p className="text-3xl font-bold mt-1">{scheduled}</p>
-                        <p className="text-white/60 text-[10px] mt-0.5">monitored buyers</p>
+                        <p className="text-white/60 text-[10px] mt-0.5">due this period</p>
                       </div>
                       <div className="rounded-xl p-4 text-center text-white" style={{background:"linear-gradient(135deg,#059669,#047857)"}}>
                         <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider">Done</p>
                         <p className="text-3xl font-bold mt-1">{done}</p>
-                        <p className="text-white/60 text-[10px] mt-0.5">{ms.meetingsHeld && ms.meetingsHeld!==done ? `${ms.meetingsHeld} meetings held` : "buyers met"}</p>
+                        <p className="text-white/60 text-[10px] mt-0.5">meetings done</p>
                       </div>
                       <div className="rounded-xl p-4 text-center text-white" style={{background:"linear-gradient(135deg,#dc2626,#b91c1c)"}}>
                         <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider">Pending</p>

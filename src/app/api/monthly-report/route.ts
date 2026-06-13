@@ -14,7 +14,7 @@ import {
   getPIRecords, get8020Buyers, getMeetingSchedules, filterPIByFY, sumContainers,
   getTargetRecords, getCountryTargets,
 } from "@/lib/data"
-import { getCurrentFY, parsePIDate, getFYWeek } from "@/lib/fy-utils"
+import { getCurrentFY, parsePIDate, getFYWeek, getFYBoundaries } from "@/lib/fy-utils"
 import type { FinancialYear } from "@/types"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -321,8 +321,7 @@ export async function GET(req: Request) {
   // Build a Set of "calYear-calMonth" strings for fast lookup
   const calMonthSet = new Set(calendarMonths.map(({ month, year }) => `${year}-${month}`))
 
-  // Distinct buyers actually met in the period (per tier) — so done + pending = scheduled
-  const metByTier: Record<string, Set<string>> = { TIER1: new Set(), TIER2: new Set(), TIER3: new Set() }
+  // DONE = every completed meeting in the period (counts repeats), per tier
   for (const sched of meetingSchedules) {
     for (const h of sched.history) {
       const d = new Date(h.meetingDate)
@@ -333,22 +332,41 @@ export async function GET(req: Request) {
         : calMonthSet.has(`${d.getFullYear()}-${d.getMonth()}`)
       if (inPeriod) {
         const tk = sched.tier as string
-        if (tk in byTierDone) { byTierDone[tk]++; metByTier[tk].add(sched.buyerName) }
+        if (tk in byTierDone) byTierDone[tk]++
       }
     }
   }
 
-  // Scheduled = monitored buyers on a meeting cadence; Done = distinct buyers met;
-  // Pending = scheduled − done (buyers not met in this period)
+  // SCHEDULED = meetings DUE in the period from each tier's cadence
+  // (T1 every 15 days, T2 every 20, T3 every 30), generated across the FY.
+  const CADENCE: Record<string, number> = { TIER1: 15, TIER2: 20, TIER3: 30 }
+  const { start: fyStart, end: fyEnd } = getFYBoundaries(fy)
+  const fyMonthOf = (d: Date) => ((d.getMonth() - 3 + 12) % 12) + 1
+  const DAY = 86_400_000
+  const scheduledByTier: Record<string, number> = { TIER1: 0, TIER2: 0, TIER3: 0 }
+  for (const b of monitored) {
+    const D = CADENCE[b.tier as string]
+    if (!D) continue
+    for (let k = 1; ; k++) {
+      const due = new Date(fyStart.getTime() + k * D * DAY)
+      if (due > fyEnd) break
+      const inPeriod = weekMode
+        ? selectedWeeks.includes(getFYWeek(due, fy))
+        : selectedMonths.includes(fyMonthOf(due))
+      if (inPeriod) scheduledByTier[b.tier as string]++
+    }
+  }
+
+  // Scheduled = due meetings (cadence); Done = meetings completed (count); Pending = Scheduled − Done
   const tierStat = (t: "TIER1" | "TIER2" | "TIER3") => {
-    const scheduled = tierBuyerCount[t]
-    const done      = metByTier[t].size
-    return { scheduled, done, pending: Math.max(0, scheduled - done), total: scheduled }
+    const scheduled = scheduledByTier[t]
+    const done      = byTierDone[t]
+    return { scheduled, done, pending: Math.max(0, scheduled - done), total: tierBuyerCount[t] }
   }
   const t1 = tierStat("TIER1"), t2 = tierStat("TIER2"), t3 = tierStat("TIER3")
   const scheduledTotal = t1.scheduled + t2.scheduled + t3.scheduled
   const doneTotal      = t1.done + t2.done + t3.done
-  const meetingsHeld   = byTierDone.TIER1 + byTierDone.TIER2 + byTierDone.TIER3
+  const meetingsHeld   = doneTotal
 
   // Period label — week mode shows "Week N" / "Weeks N–M", else month/quarter label
   let calendarMonthYear: string
