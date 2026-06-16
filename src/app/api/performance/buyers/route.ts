@@ -124,13 +124,23 @@ export async function GET(req: Request) {
       b.currentYearTargetContainers - a.currentYearTargetContainers
     )
 
+    // Track which PI groups have been counted so each PI's containers are counted
+    // exactly once (duplicate / name-variant target rows must not double-count).
+    const usedKeys     = new Set<string>()
+    const usedPrevKeys = new Set<string>()
+
     const rows: BuyerPerformanceRow[] = filteredTargets.map((t) => {
       const key      = t.buyerCompanyName.toUpperCase()
       const buyerRec = buyerMaster.find((b) => b.buyerCompanyName.toUpperCase() === key)
       const code     = buyerRec?.buyerCode || key
 
-      const piCurrent  = byBuyerCurrent[code]  || byBuyerCurrent[key]  || []
-      const piPrevious = byBuyerPrevious[code] || byBuyerPrevious[key] || []
+      // Resolve the single PI group this target owns; skip if already counted
+      const gkCur = byBuyerCurrent[code]  ? code : (byBuyerCurrent[key]  ? key : null)
+      const gkPrv = byBuyerPrevious[code] ? code : (byBuyerPrevious[key] ? key : null)
+      let piCurrent:  PIRecord[] = []
+      let piPrevious: PIRecord[] = []
+      if (gkCur && !usedKeys.has(gkCur))     { usedKeys.add(gkCur);     piCurrent  = byBuyerCurrent[gkCur] }
+      if (gkPrv && !usedPrevKeys.has(gkPrv)) { usedPrevKeys.add(gkPrv); piPrevious = byBuyerPrevious[gkPrv] }
 
       const actual   = sumContainers(piCurrent)
       const prevYear = sumContainers(piPrevious)
@@ -207,15 +217,8 @@ export async function GET(req: Request) {
     })
 
     // ── Include order-buyers that have NO target row, so the actual total matches
-    //    Live Data (which counts every PI). They show as target=0 ("No Target") rows. ──
-    const usedKeys = new Set<string>()
-    for (const t of filteredTargets) {
-      const key = t.buyerCompanyName.toUpperCase()
-      const buyerRec = buyerMaster.find((b) => b.buyerCompanyName.toUpperCase() === key)
-      const code = buyerRec?.buyerCode || key
-      if (byBuyerCurrent[code]) usedKeys.add(code)
-      else if (byBuyerCurrent[key]) usedKeys.add(key)
-    }
+    //    Live Data (which counts every PI). They show as target=0 ("No Target") rows.
+    //    usedKeys was populated above, so each PI group is counted exactly once. ──
     const extraRows: BuyerPerformanceRow[] = []
     for (const [k, piList] of Object.entries(byBuyerCurrent)) {
       if (usedKeys.has(k)) continue
