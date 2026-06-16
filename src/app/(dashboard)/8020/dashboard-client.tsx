@@ -473,13 +473,13 @@ export function Dashboard8020Client({ user }: { user: AppUser }) {
         <StatCard
           label="Total Target"
           value={fmt(totalTarget)}
-          sub="containers · FY 2026-27"
+          sub={`${stats.totalMonitored} monitored buyers · FY 2026-27`}
           accent="bg-violet-50 border-violet-200"
         />
         <StatCard
           label="Total Actual"
           value={fmt(totalActual)}
-          sub="containers ordered (confirmed PIs)"
+          sub={`${stats.totalMonitored} monitored only · confirmed PIs`}
           accent="bg-cyan-50 border-cyan-200"
         />
         <StatCard
