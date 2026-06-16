@@ -479,7 +479,7 @@ export function Dashboard8020Client({ user }: { user: AppUser }) {
         <StatCard
           label="Total Actual"
           value={fmt(totalActual)}
-          sub="containers shipped"
+          sub="containers ordered (confirmed PIs)"
           accent="bg-cyan-50 border-cyan-200"
         />
         <StatCard
