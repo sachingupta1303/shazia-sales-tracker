@@ -21,11 +21,17 @@ export async function GET(req: Request) {
   const currentFY   = getCurrentFY()
   const currentWeek = getCurrentFYWeek()
 
-  const [allPI, targets, reviews] = await Promise.all([
+  const [allPI, targets] = await Promise.all([
     getPIRecords(),
     getTargetRecords(currentFY),
-    getWeeklyReviews(currentFY, spFilter || undefined),
   ])
+  // Weekly reviews are optional context — never let their failure zero the page
+  let reviews: Awaited<ReturnType<typeof getWeeklyReviews>> = []
+  try {
+    reviews = await getWeeklyReviews(currentFY, spFilter || undefined)
+  } catch (e) {
+    console.error("[execution] weekly reviews fetch failed:", e)
+  }
 
   // Filter PI for current FY + optional SP
   let fyPI = filterPIByFY(allPI, currentFY)
@@ -120,7 +126,7 @@ export async function GET(req: Request) {
     reviews: reviews.slice(0, 10),
     filterOptions: {
       salesPersons: [...new Set(
-        (await getPIRecords()).map((r) => r.salesPerson).filter(Boolean)
+        allPI.map((r) => r.salesPerson).filter(Boolean)
       )].sort(),
     },
   })

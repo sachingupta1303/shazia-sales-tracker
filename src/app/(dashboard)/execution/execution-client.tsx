@@ -246,7 +246,10 @@ export function ExecutionClient({ userRole, salesPerson }: Props) {
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState("")
   const [expandedCycle, setExpanded] = useState<number | null>(null)
-  const [spFilter,   setSpFilter]   = useState(salesPerson ?? "")
+  // Only SALES_PERSON is locked to their own name. Managers/Admins default to
+  // "All" — otherwise their own salesPersonName would silently filter everything
+  // out (target + actual both 0).
+  const [spFilter,   setSpFilter]   = useState(userRole === "SALES_PERSON" ? (salesPerson ?? "") : "")
 
   const isSP = userRole === "SALES_PERSON"
 
