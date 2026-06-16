@@ -206,9 +206,63 @@ export async function GET(req: Request) {
       }
     })
 
+    // ── Include order-buyers that have NO target row, so the actual total matches
+    //    Live Data (which counts every PI). They show as target=0 ("No Target") rows. ──
+    const usedKeys = new Set<string>()
+    for (const t of filteredTargets) {
+      const key = t.buyerCompanyName.toUpperCase()
+      const buyerRec = buyerMaster.find((b) => b.buyerCompanyName.toUpperCase() === key)
+      const code = buyerRec?.buyerCode || key
+      if (byBuyerCurrent[code]) usedKeys.add(code)
+      else if (byBuyerCurrent[key]) usedKeys.add(key)
+    }
+    const extraRows: BuyerPerformanceRow[] = []
+    for (const [k, piList] of Object.entries(byBuyerCurrent)) {
+      if (usedKeys.has(k)) continue
+      const actual = sumContainers(piList)
+      if (actual <= 0) continue
+      const sample   = piList[0]
+      const prevYear = sumContainers(byBuyerPrevious[k] || [])
+      const { segment, isKeyAccount } = resolveSegment(sample.buyerCompanyName, sample.buyerCode)
+      const lastOrderDate = [...piList].sort((a, b) => b.piDate.localeCompare(a.piDate))[0]?.piDate
+
+      // basmati / non-basmati (PI-level, once per PI)
+      let bas = 0, non = 0
+      const bSeen = new Set<string>(), nSeen = new Set<string>()
+      for (const r of piList) {
+        if (r.varieties === "BASMATI" && !bSeen.has(r.piNumber))     { bSeen.add(r.piNumber); bas += r.totalContainers }
+        if (r.varieties === "NON BASMATI" && !nSeen.has(r.piNumber)) { nSeen.add(r.piNumber); non += r.totalContainers }
+      }
+
+      extraRows.push({
+        buyerCode:               k,
+        buyerName:               sample.buyerCompanyName,
+        country:                 sample.countries,
+        salesPerson:             sample.salesPerson,
+        tier:                    tierByName.get(sample.buyerCompanyName.toLowerCase().trim()) ?? "OTHERS",
+        previousYear:            parseFloat(prevYear.toFixed(1)),
+        target:                  0,
+        targetDue:               0,
+        actual:                  parseFloat(actual.toFixed(1)),
+        gap:                     parseFloat(actual.toFixed(1)),
+        status:                  getStatus(0, actual, 0),
+        achievementPercent:      getAchievementPercent(actual, 0),
+        lastOrderDate,
+        segment,
+        isKeyAccount,
+        currentYearContainers:   parseFloat(actual.toFixed(1)),
+        previousYearContainers:  parseFloat(prevYear.toFixed(1)),
+        growthPct:               prevYear > 0 ? Math.round(((actual - prevYear) / prevYear) * 100) : null,
+        topBrands:               [],
+        basmatiContainers:       parseFloat(bas.toFixed(1)),
+        nonBasmatiContainers:    parseFloat(non.toFixed(1)),
+      })
+    }
+    const allRows = [...rows, ...extraRows]
+
     let finalRows: BuyerPerformanceRow[] = []
-    if (tierFilter)    finalRows = rows.filter((r) => r.tier === tierFilter)
-    else finalRows = rows
+    if (tierFilter)    finalRows = allRows.filter((r) => r.tier === tierFilter)
+    else finalRows = allRows
 
     if (segmentFilter) finalRows = finalRows.filter((r) => r.segment === segmentFilter)
     if (buyerFilter) {
