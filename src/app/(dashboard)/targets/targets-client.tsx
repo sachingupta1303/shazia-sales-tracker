@@ -13,6 +13,30 @@ function sumField<T>(rows: T[], field: keyof T): number {
   return rows.reduce((s, r) => s + (Number(r[field]) || 0), 0)
 }
 
+// ── 3-state status (pace-adjusted: achievement % = actual ÷ due-till-now) ───────
+//   Achieved ≥ 100% · On Track 70–99% · Critical < 70% · No Target (no target set)
+type St3 = "ACHIEVED" | "ON_TRACK" | "CRITICAL" | "NO_TARGET"
+function deriveStatus3(r: { target: number; achievementPercent: number }): St3 {
+  if (!r.target || r.target <= 0) return "NO_TARGET"
+  const p = r.achievementPercent
+  if (p >= 100) return "ACHIEVED"
+  if (p >= 70)  return "ON_TRACK"
+  return "CRITICAL"
+}
+const ST3_STYLE: Record<St3, string> = {
+  ACHIEVED:  "bg-green-100 text-green-700",
+  ON_TRACK:  "bg-amber-100 text-amber-700",
+  CRITICAL:  "bg-red-100 text-red-600",
+  NO_TARGET: "bg-gray-100 text-gray-500",
+}
+const ST3_LABEL: Record<St3, string> = {
+  ACHIEVED: "✓ Achieved", ON_TRACK: "On Track", CRITICAL: "✕ Critical", NO_TARGET: "No Target",
+}
+function StatusBadge3({ row }: { row: { target: number; achievementPercent: number } }) {
+  const s = deriveStatus3(row)
+  return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ST3_STYLE[s]}`}>{ST3_LABEL[s]}</span>
+}
+
 type Tab = "country" | "buyer" | "salesperson"
 
 interface Props { userRole?: UserRole; salesPerson?: string }
@@ -188,7 +212,7 @@ function BuyerTable({ rows, week, showSP }: { rows: BuyerPerformance[]; week: nu
               <td className="px-4 py-3 font-bold text-gray-900 tabular-nums text-center">{formatNumber(r.actual)}</td>
               <td className="px-4 py-3 text-center"><GapCell gap={r.gap} /></td>
               <td className="px-4 py-3 min-w-[120px]"><AchievementBar pct={r.achievementPercent} status={r.status} /></td>
-              <td className="px-4 py-3 text-center"><StatusBadge status={r.status} /></td>
+              <td className="px-4 py-3 text-center"><StatusBadge3 row={r} /></td>
             </tr>
           ))}
         </tbody>
@@ -349,6 +373,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const [tab,      setTab]     = useState<Tab>("country")
   const [filters,    setFilters]    = useState<FilterState>({})
   const [tierFilter, setTierFilter] = useState<string>("")
+  const [statusFilter, setStatusFilter] = useState<string>("")  // "" | ACHIEVED | ON_TRACK | CRITICAL
   const [loading,  setLoading] = useState(true)
   const [error,    setError]   = useState("")
   const [options,  setOptions] = useState<{ countries: string[]; salesPersons: string[] }>({ countries: [], salesPersons: [] })
@@ -394,18 +419,20 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
 
   const week = countryData?.meta?.week ?? buyerData?.meta?.week ?? spData?.meta?.week ?? 6
 
-  // Client-side tier filter — applied after data loads
+  // Client-side tier + status filters — applied after data loads
   const filteredBuyerRows = (buyerData?.rows ?? []).filter(
-    (r) => !tierFilter || r.tier === tierFilter
+    (r) => (!tierFilter || r.tier === tierFilter)
+        && (!statusFilter || deriveStatus3(r) === statusFilter)
   )
 
-  // Summary cards always reflect the tier-filtered rows (client-side)
+  // Summary cards always reflect the filtered rows (client-side)
   const filteredSummary = tab === "buyer" && buyerData
     ? {
         totalTarget: sumField(filteredBuyerRows, "target"),
         totalActual: sumField(filteredBuyerRows, "actual"),
-        achieved:    filteredBuyerRows.filter((r) => r.status === "ACHIEVED").length,
-        missed:      filteredBuyerRows.filter((r) => r.status === "MISSED").length,
+        achieved:    filteredBuyerRows.filter((r) => deriveStatus3(r) === "ACHIEVED").length,
+        onTrack:     filteredBuyerRows.filter((r) => deriveStatus3(r) === "ON_TRACK").length,
+        critical:    filteredBuyerRows.filter((r) => deriveStatus3(r) === "CRITICAL").length,
         buyerCount:  filteredBuyerRows.length,
       }
     : null
@@ -414,11 +441,12 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
 
   const summary = filteredSummary
     ? [
-        { label: "Total Target",               value: formatNumber(filteredSummary.totalTarget, 0), color: "bg-purple-50 border-purple-200" },
-        { label: "Total Actual",               value: formatNumber(filteredSummary.totalActual),    color: "bg-green-50 border-green-200"  },
-        { label: "Achieved",                   value: filteredSummary.achieved,                     color: "bg-green-50 border-green-200"  },
-        { label: "Missed",                     value: filteredSummary.missed,                       color: "bg-red-50 border-red-200"      },
-        { label: `${tierLabel} Buyers`,        value: filteredSummary.buyerCount,                   color: "bg-amber-50 border-amber-200"  },
+        { label: "Total Target",        value: formatNumber(filteredSummary.totalTarget, 0), color: "bg-purple-50 border-purple-200" },
+        { label: "Total Actual",        value: formatNumber(filteredSummary.totalActual),    color: "bg-green-50 border-green-200"  },
+        { label: "✓ Achieved",          value: filteredSummary.achieved,                     color: "bg-green-50 border-green-200"  },
+        { label: "On Track",            value: filteredSummary.onTrack,                      color: "bg-amber-50 border-amber-200"  },
+        { label: "✕ Critical",          value: filteredSummary.critical,                     color: "bg-red-50 border-red-200"      },
+        { label: `${tierLabel} Buyers`, value: filteredSummary.buyerCount,                   color: "bg-blue-50 border-blue-200"    },
       ]
     : null
 
@@ -468,9 +496,31 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         </div>
       )}
 
+      {/* Buyer tab — status filter pills */}
+      {tab === "buyer" && (
+        <div className="flex gap-2 flex-wrap">
+          {([
+            { val: "",         label: "All Status", active: "bg-gray-800 text-white border-gray-800" },
+            { val: "ACHIEVED", label: "✓ Achieved", active: "bg-green-600 text-white border-green-600" },
+            { val: "ON_TRACK", label: "On Track",   active: "bg-amber-500 text-white border-amber-500" },
+            { val: "CRITICAL", label: "✕ Critical", active: "bg-red-600 text-white border-red-600" },
+          ] as const).map(({ val, label, active }) => (
+            <button
+              key={val || "allstatus"}
+              onClick={() => setStatusFilter(val)}
+              className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
+                statusFilter === val ? active : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Summary cards (buyer tab) */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {summary.map((s) => <SummaryCard key={s.label} {...s} />)}
         </div>
       )}
