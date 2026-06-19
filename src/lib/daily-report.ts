@@ -14,9 +14,9 @@
  */
 
 import {
-  get8020Buyers, getPIRecords, getTargetRecords, filterPIByFY, sumContainersBy,
+  get8020Buyers, getPIRecords, getTargetRecords, sumContainersBy,
 } from "./data"
-import { getCurrentFY, getCurrentFYWeek, parsePIDate } from "./fy-utils"
+import { getCurrentFY, getCurrentFYWeek, parsePIDate, isInFY } from "./fy-utils"
 import { APP_BASE_URL } from "./mailer"
 
 export type DailyStatus = "CRITICAL" | "ON_TRACK" | "OVER_ACHIEVED" | "NO_TARGET"
@@ -71,7 +71,8 @@ export async function buildDailyBuyerReport(): Promise<DailyReport> {
   const [buyers, allPI, targets] = await Promise.all([
     get8020Buyers(), getPIRecords(), getTargetRecords(fy),
   ])
-  const fyPI = filterPIByFY(allPI, fy)
+  // Use the SAME FY filter as Live Data (by PI date), so totals stay in sync.
+  const fyPI = allPI.filter((r) => isInFY(parsePIDate(r.piDate), fy))
 
   // Current-month PI: prefer fyMonthNo, else derive from piDate
   const monthPI = fyPI.filter((r) => {
