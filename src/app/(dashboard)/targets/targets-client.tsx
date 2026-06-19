@@ -397,6 +397,9 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
     if (f.country)     p.set("country",     f.country)
     if (f.salesPerson) p.set("salesPerson", f.salesPerson)
     if (f.fy)          p.set("fy",          f.fy)
+    if (f.fyMonth)     p.set("fyMonth",     f.fyMonth)
+    if (f.fyQuarter)   p.set("fyQuarter",   f.fyQuarter)
+    if (f.fyWeek)      p.set("fyWeek",      f.fyWeek)
     return p.toString()
   }, [])
 
