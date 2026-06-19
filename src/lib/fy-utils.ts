@@ -55,6 +55,30 @@ export function targetDueTillWeek(annualTarget: number, currentWeek: FYWeek): nu
   return parseFloat(((annualTarget / 52) * currentWeek).toFixed(2))
 }
 
+export interface PeriodFilter { fyMonth?: number; fyQuarter?: number; fyWeek?: number }
+
+/**
+ * Prorate an annual target to the selected period filter, and the amount "due"
+ * for the Actual-vs-target comparison.
+ *   - No filter : full annual target; due = pace till the current FY week.
+ *   - Week      : annual / 52   (whole selected week's share)
+ *   - Month     : annual / 12
+ *   - Quarter   : annual / 4
+ * When a specific period is selected the whole period's target is treated as
+ * due, so Actual (already filtered to that period) compares like-for-like.
+ */
+export function scopedTarget(
+  annualTarget: number,
+  period: PeriodFilter,
+  currentWeek: FYWeek,
+): { target: number; due: number } {
+  const round = (n: number) => parseFloat(n.toFixed(2))
+  if (period.fyWeek)    { const t = round(annualTarget / 52); return { target: t, due: t } }
+  if (period.fyMonth)   { const t = round(annualTarget / 12); return { target: t, due: t } }
+  if (period.fyQuarter) { const t = round(annualTarget / 4);  return { target: t, due: t } }
+  return { target: annualTarget, due: targetDueTillWeek(annualTarget, currentWeek) }
+}
+
 // ─── Status Logic ─────────────────────────────────────────────────────────────
 
 export function getStatus(

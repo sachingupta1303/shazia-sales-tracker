@@ -6,7 +6,7 @@ import {
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
-  targetDueTillWeek, getStatus, getAchievementPercent,
+  scopedTarget, getStatus, getAchievementPercent,
 } from "@/lib/fy-utils"
 import type { AppUser, FinancialYear, CountryPerformance, PIRecord } from "@/types"
 
@@ -88,8 +88,7 @@ export async function GET(req: Request) {
       const piPrev   = previousByCountry[country] || []
       const actual   = sumContainers(piList)
       const prevYear = sumContainers(piPrev)
-      const target   = targetByCountry[country] || 0
-      const due      = targetDueTillWeek(target, week)
+      const { target, due } = scopedTarget(targetByCountry[country] || 0, { fyMonth, fyQuarter, fyWeek }, week)
       const gap      = parseFloat((actual - due).toFixed(2))
       const status   = getStatus(target, actual, due)
       const pct      = getAchievementPercent(actual, due)

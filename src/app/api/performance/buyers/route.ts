@@ -6,7 +6,7 @@ import {
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
-  targetDueTillWeek, getStatus, getAchievementPercent,
+  scopedTarget, getStatus, getAchievementPercent,
 } from "@/lib/fy-utils"
 import type {
   AppUser, FinancialYear, BuyerPerformance, BuyerTier, BuyerSegment, PIRecord,
@@ -144,8 +144,7 @@ export async function GET(req: Request) {
 
       const actual   = sumContainers(piCurrent)
       const prevYear = sumContainers(piPrevious)
-      const target   = t.currentYearTargetContainers
-      const due      = targetDueTillWeek(target, week)
+      const { target, due } = scopedTarget(t.currentYearTargetContainers, { fyMonth, fyQuarter, fyWeek }, week)
       const gap      = parseFloat((actual - due).toFixed(2))
 
       // Containers are a PI-level value repeated on every product row of a PI.
