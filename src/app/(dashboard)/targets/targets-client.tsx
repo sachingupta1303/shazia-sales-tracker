@@ -37,7 +37,7 @@ function StatusBadge3({ row }: { row: { target: number; achievementPercent: numb
   return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ST3_STYLE[s]}`}>{ST3_LABEL[s]}</span>
 }
 
-type Tab = "country" | "buyer" | "salesperson"
+type Tab = "country" | "buyer" | "salesperson" | "coordinator"
 
 interface Props { userRole?: UserRole; salesPerson?: string }
 
@@ -258,7 +258,14 @@ function BuyerTable({ rows, week, showSP }: { rows: BuyerPerformance[]; week: nu
 }
 
 // ── SP Table ──────────────────────────────────────────────────────────────────
-function SPTable({ rows, week }: { rows: SalesPersonPerformance[]; week: number }) {
+//   Shared by the "By Sales Person" and "By Sales Coordinator" tabs — both use the
+//   SalesPersonPerformance shape (name held in `salesPerson`). `nameLabel` sets the
+//   header text; `linkBase` (when set) makes each name link to a detail page.
+function SPTable({
+  rows, week, nameLabel = "Sales Person", linkBase = "/sales-persons",
+}: {
+  rows: SalesPersonPerformance[]; week: number; nameLabel?: string; linkBase?: string | null
+}) {
   const router = useRouter()
   const totalGap = sumField(rows, "gap")
   const [page, setPage] = useState(1)
@@ -270,7 +277,7 @@ function SPTable({ rows, week }: { rows: SalesPersonPerformance[]; week: number 
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
             <th className="text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-12">#</th>
-            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Sales Person</th>
+            <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">{nameLabel}</th>
             <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Prev Year</th>
             <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Target</th>
             <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Due W{week}</th>
@@ -285,8 +292,8 @@ function SPTable({ rows, week }: { rows: SalesPersonPerformance[]; week: number 
           {paginatedRows.map((r, i) => (
             <tr
               key={r.salesPerson}
-              className="hover:bg-green-50 transition-colors group cursor-pointer"
-              onClick={() => router.push(`/sales-persons/${encodeURIComponent(r.salesPerson)}`)}
+              className={`hover:bg-green-50 transition-colors group ${linkBase ? "cursor-pointer" : ""}`}
+              onClick={linkBase ? () => router.push(`${linkBase}/${encodeURIComponent(r.salesPerson)}`) : undefined}
             >
               <td className="px-3 py-3 text-gray-400 tabular-nums text-center">{(page - 1) * 10 + i + 1}</td>
               <td className="px-4 py-3 font-bold text-gray-800 group-hover:text-green-700">{r.salesPerson}</td>
@@ -381,6 +388,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const [countryData, setCountryData] = useState<{ rows: CountryPerformance[]; meta: any } | null>(null)
   const [buyerData,   setBuyerData]   = useState<{ rows: BuyerPerformance[];   summary: any; meta: any } | null>(null)
   const [spData,      setSPData]      = useState<{ rows: SalesPersonPerformance[]; meta: any } | null>(null)
+  const [coordData,   setCoordData]   = useState<{ rows: SalesPersonPerformance[]; meta: any } | null>(null)
 
   const isSP = userRole === "SALES_PERSON"
 
@@ -406,10 +414,14 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         const res = await fetch(`/api/performance/buyers?${qs}`)
         const d   = await res.json()
         setBuyerData(d)
-      } else {
+      } else if (t === "salesperson") {
         const res = await fetch(`/api/performance/salesperson?${qs}`)
         const d   = await res.json()
         setSPData(d)
+      } else {
+        const res = await fetch(`/api/performance/salescoordinator?${qs}`)
+        const d   = await res.json()
+        setCoordData(d)
       }
     } catch { setError("Failed to load data.") }
     finally  { setLoading(false) }
@@ -417,7 +429,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
 
   useEffect(() => { fetchTab(tab, filters) }, [tab, filters, fetchTab])
 
-  const week = countryData?.meta?.week ?? buyerData?.meta?.week ?? spData?.meta?.week ?? 6
+  const week = countryData?.meta?.week ?? buyerData?.meta?.week ?? spData?.meta?.week ?? coordData?.meta?.week ?? 6
 
   // Client-side tier + status filters — applied after data loads
   const filteredBuyerRows = (buyerData?.rows ?? []).filter(
@@ -459,6 +471,9 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         {!isSP && (
           <TabBtn active={tab === "salesperson"} onClick={() => setTab("salesperson")}>👥 By Sales Person</TabBtn>
         )}
+        {!isSP && (
+          <TabBtn active={tab === "coordinator"} onClick={() => setTab("coordinator")}>📋 By Sales Coordinator</TabBtn>
+        )}
       </div>
 
       {/* Filters */}
@@ -468,7 +483,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         options={options}
         showFY={true}
         showVariety={false}
-        showSP={!isSP && tab !== "salesperson"}
+        showSP={!isSP && tab !== "salesperson" && tab !== "coordinator"}
       />
 
       {/* Buyer tab — tier filter pills */}
@@ -532,9 +547,10 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-700">
             {loading ? "Loading…" : (
-              tab === "country" ? `${countryData?.rows.length ?? 0} countries` :
-              tab === "buyer"   ? `${filteredBuyerRows.length} buyers`    :
-                                  `${spData?.rows.length     ?? 0} sales persons`
+              tab === "country"     ? `${countryData?.rows.length ?? 0} countries` :
+              tab === "buyer"       ? `${filteredBuyerRows.length} buyers`    :
+              tab === "salesperson" ? `${spData?.rows.length     ?? 0} sales persons` :
+                                      `${coordData?.rows.length  ?? 0} sales coordinators`
             )}
           </span>
           <span className="text-xs text-gray-400">FY Week {week}</span>
@@ -546,6 +562,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
             {tab === "country"    && countryData && <div className="hidden md:block"><CountryTable rows={countryData.rows} week={week} /></div>}
             {tab === "buyer"      && buyerData   && <div className="hidden md:block"><BuyerTable   rows={filteredBuyerRows} week={week} showSP={!isSP} /></div>}
             {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spData.rows}      week={week} /></div>}
+            {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordData.rows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
           </>
         )}
 
@@ -566,6 +583,12 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
                 badge={<TierBadge tier={r.tier} />} />
             ))}
             {tab === "salesperson" && spData?.rows.map((r) => (
+              <MobilePerformanceCard key={r.salesPerson} title={r.salesPerson}
+                sub={`${r.activeBuyers} active buyers`}
+                target={r.target} actual={r.actual} gap={r.gap}
+                pct={r.achievementPercent} status={r.status} />
+            ))}
+            {tab === "coordinator" && coordData?.rows.map((r) => (
               <MobilePerformanceCard key={r.salesPerson} title={r.salesPerson}
                 sub={`${r.activeBuyers} active buyers`}
                 target={r.target} actual={r.actual} gap={r.gap}
