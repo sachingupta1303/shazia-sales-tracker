@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 import {
-  getPIRecords, getTargetRecords, getBuyerMaster,
+  getPIRecords, getTargetRecords, getBuyerMaster, get8020Buyers,
   filterPIByFY, sumContainers,
 } from "@/lib/data"
 import {
@@ -12,11 +12,13 @@ import type { AppUser, FinancialYear, SalesPersonPerformance, PIRecord } from "@
 
 export const dynamic = "force-dynamic"
 
-// Group PI records by sales coordinator (uppercased name).
+const UNASSIGNED = "UNASSIGNED"
+
+// Group PI records by sales coordinator (uppercased name). Records without a
+// coordinator are bucketed under UNASSIGNED so grand totals always match live data.
 function groupByCoordinator(records: PIRecord[]): Record<string, PIRecord[]> {
   return records.reduce((acc, r) => {
-    const key = (r.salesCoordinator || "").toUpperCase().trim()
-    if (!key) return acc
+    const key = (r.salesCoordinator || "").toUpperCase().trim() || UNASSIGNED
     acc[key] = acc[key] ? [...acc[key], r] : [r]
     return acc
   }, {} as Record<string, PIRecord[]>)
@@ -57,10 +59,11 @@ export async function GET(req: Request) {
         return true
       })
 
-    const [allPI, targets, buyerMaster] = await Promise.all([
+    const [allPI, targets, buyerMaster, buyers8020] = await Promise.all([
       getPIRecords(),
       getTargetRecords(fy),
       getBuyerMaster(),
+      get8020Buyers(),
     ])
 
     const currentPI  = filterRecords(filterPIByFY(allPI, fy))
@@ -69,27 +72,32 @@ export async function GET(req: Request) {
     const currentByCoord  = groupByCoordinator(currentPI)
     const previousByCoord = groupByCoordinator(previousPI)
 
-    // Map each buyer → its sales coordinator (Buyer Master first, PI data fills gaps).
+    // Build buyer → coordinator lookup. The 80/20 sheet is the PRIMARY target
+    // source and carries the coordinator on each row, so it's authoritative;
+    // Buyer Master and PI data fill gaps for any TARGET_MASTER-fallback buyers.
     const buyerToCoord = new Map<string, string>()
-    buyerMaster.forEach((b) => {
-      if (b.salesCoordinator) {
-        buyerToCoord.set(b.buyerCompanyName.toUpperCase(), b.salesCoordinator.toUpperCase())
-        if (b.buyerCode) buyerToCoord.set(b.buyerCode.toUpperCase(), b.salesCoordinator.toUpperCase())
-      }
-    })
+    const remember = (key: string | undefined, coord: string | undefined) => {
+      if (key && coord) buyerToCoord.set(key.toUpperCase().trim(), coord.toUpperCase().trim())
+    }
     allPI.forEach((r) => {
-      if (r.salesCoordinator) {
-        buyerToCoord.set(r.buyerCompanyName.toUpperCase(), r.salesCoordinator.toUpperCase())
-        if (r.buyerCode) buyerToCoord.set(r.buyerCode.toUpperCase(), r.salesCoordinator.toUpperCase())
-      }
+      remember(r.buyerCompanyName, r.salesCoordinator)
+      remember(r.buyerCode, r.salesCoordinator)
+    })
+    buyerMaster.forEach((b) => {
+      remember(b.buyerCompanyName, b.salesCoordinator)
+      remember(b.buyerCode, b.salesCoordinator)
+    })
+    buyers8020.forEach((b) => {
+      remember(b.buyerName, b.salesCoordinator)
     })
 
     // Aggregate targets by coordinator (apply country filter if present).
+    // Targets with no resolvable coordinator go to UNASSIGNED — never dropped —
+    // so the grand total always equals the full FY target.
     const targetByCoord: Record<string, number> = {}
     targets.forEach((t) => {
       if (country && t.countries.toUpperCase() !== country.toUpperCase()) return
-      const coord = buyerToCoord.get(t.buyerCompanyName.toUpperCase())
-      if (!coord) return
+      const coord = buyerToCoord.get(t.buyerCompanyName.toUpperCase().trim()) || UNASSIGNED
       targetByCoord[coord] = (targetByCoord[coord] || 0) + t.currentYearTargetContainers
     })
 
