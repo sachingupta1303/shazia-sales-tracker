@@ -251,39 +251,39 @@ async function generatePDF(data: MonthlyReportData) {
 
   // ── KPI card ───────────────────────────────────────────────────────────────
   function kpiCard(
-    cx: number, cy: number, cW: number, cH: number,
+    cx: number, cy: number, mCW: number, cH: number,
     label: string, value: string, sub: string,
     rgb: [number, number, number],
   ) {
     // shadow
     doc.setFillColor(200, 210, 220)
-    doc.roundedRect(cx + 1, cy + 1, cW, cH, 2.5, 2.5, "F")
+    doc.roundedRect(cx + 1, cy + 1, mCW, cH, 2.5, 2.5, "F")
     // body
     doc.setFillColor(255, 255, 255)
-    doc.roundedRect(cx, cy, cW, cH, 2.5, 2.5, "F")
+    doc.roundedRect(cx, cy, mCW, cH, 2.5, 2.5, "F")
     // border
     doc.setDrawColor(226, 232, 240)
     doc.setLineWidth(0.3)
-    doc.roundedRect(cx, cy, cW, cH, 2.5, 2.5, "S")
+    doc.roundedRect(cx, cy, mCW, cH, 2.5, 2.5, "S")
     // colored top stripe
     doc.setFillColor(...rgb)
-    doc.roundedRect(cx, cy, cW, 7, 2.5, 2.5, "F")
-    doc.rect(cx, cy + 3, cW, 4, "F")
+    doc.roundedRect(cx, cy, mCW, 7, 2.5, 2.5, "F")
+    doc.rect(cx, cy + 3, mCW, 4, "F")
     // label in stripe
     doc.setTextColor(255, 255, 255)
     doc.setFont("helvetica", "bold")
     doc.setFontSize(5.8)
-    doc.text(label.toUpperCase(), cx + cW / 2, cy + 5, { align: "center" })
+    doc.text(label.toUpperCase(), cx + mCW / 2, cy + 5, { align: "center" })
     // value
     doc.setTextColor(...NAVY)
     doc.setFont("helvetica", "bold")
     doc.setFontSize(11)
-    doc.text(value, cx + cW / 2, cy + 15, { align: "center" })
+    doc.text(value, cx + mCW / 2, cy + 15, { align: "center" })
     // sub
     doc.setFont("helvetica", "normal")
     doc.setFontSize(5.5)
     doc.setTextColor(107, 114, 128)
-    doc.text(sub, cx + cW / 2, cy + 20.5, { align: "center" })
+    doc.text(sub, cx + mCW / 2, cy + 20.5, { align: "center" })
   }
 
   // ── Horizontal bar chart ───────────────────────────────────────────────────
@@ -370,9 +370,9 @@ async function generatePDF(data: MonthlyReportData) {
     { label: "Total MTs",      value: fmt(s.totalMTs, 1),            sub: "Metric Tonnes",                           rgb: [124,58,237] },
     { label: "Markets·Buyers", value: `${s.activeCountries}·${s.uniqueBuyers}`, sub: `${s.activeSalesPersons} SP`, rgb: NAVY         },
   ]
-  const cW = (W - ML - MR - 4 * 2) / 5
+  const mCW = (W - ML - MR - 4 * 2) / 5
   kpiDefs.forEach((k, i) => {
-    kpiCard(ML + i * (cW + 2), y, cW, 24, k.label, k.value, k.sub, k.rgb)
+    kpiCard(ML + i * (mCW + 2), y, mCW, 24, k.label, k.value, k.sub, k.rgb)
   })
   y += 27
 
@@ -502,62 +502,67 @@ async function generatePDF(data: MonthlyReportData) {
 
   // ── Meetings ───────────────────────────────────────────────────────────────
   if (y > 245) newPage()
-  section(`Meetings Done — ${data.calendarMonthYear}`)
+  section(`Meetings — ${data.calendarMonthYear} · scheduled vs done vs pending`)
   const ms = data.meetingsSummary
-  const mCardW = (W - ML - MR - 6) / 4
-
-  // Total card (navy blue)
-  doc.setFillColor(...NAVY)
-  doc.roundedRect(ML, y, mCardW, 22, 2, 2, "F")
-  doc.setDrawColor(...BLUE2); doc.setLineWidth(0.3)
-  doc.roundedRect(ML, y, mCardW, 22, 2, 2, "S")
-  doc.setTextColor(255, 255, 255)
   const msScheduled = ms.scheduled ?? ms.totalBuyers
   const msDone      = ms.done ?? ms.totalDone
   const msPending   = ms.pending ?? Math.max(0, msScheduled - msDone)
-  doc.setFont("helvetica","bold"); doc.setFontSize(6)
-  doc.text("DONE / SCHEDULED", ML + mCardW / 2, y + 5.5, { align:"center" })
-  doc.setFontSize(16)
-  doc.text(`${msDone} / ${msScheduled}`, ML + mCardW / 2, y + 14, { align:"center" })
-  doc.setFont("helvetica","normal"); doc.setFontSize(5.5)
-  doc.text(`${msPending} pending`, ML + mCardW / 2, y + 19, { align:"center" })
+  const mtW = (W - ML - MR - 8) / 3   // 3 cards per row, 4mm gap
 
-  // Tier cards
+  // ── Row 1 — Scheduled / Done / Pending (matches the app) ──
+  const statCards: Array<{ label:string; value:string; sub:string; rgb:[number,number,number] }> = [
+    { label:"SCHEDULED", value:String(msScheduled), sub:"due this period", rgb:[15,23,42]  },
+    { label:"DONE",      value:String(msDone),      sub:"meetings done",   rgb:[5,150,105] },
+    { label:"PENDING",   value:String(msPending),   sub:"not met yet",     rgb:[220,38,38] },
+  ]
+  statCards.forEach(({ label, value, sub, rgb }, i) => {
+    const cx = ML + i * (mtW + 4)
+    doc.setFillColor(...rgb)
+    doc.roundedRect(cx, y, mtW, 22, 2, 2, "F")
+    doc.setTextColor(255, 255, 255)
+    doc.setFont("helvetica","bold"); doc.setFontSize(6)
+    doc.text(label, cx + mtW / 2, y + 6, { align:"center" })
+    doc.setFontSize(18)
+    doc.text(value, cx + mtW / 2, y + 14.5, { align:"center" })
+    doc.setFont("helvetica","normal"); doc.setFontSize(5.5)
+    doc.text(sub, cx + mtW / 2, y + 19.5, { align:"center" })
+  })
+  y += 26
+
+  // ── Row 2 — Tier breakdown (done / scheduled · pending · %) ──
+  if (y > 255) newPage()
   const tierDefs: Array<{ key:"TIER1"|"TIER2"|"TIER3"; label:string; rgb:[number,number,number] }> = [
     { key:"TIER1", label:"Tier 1 — Key Accounts", rgb:[124,58,237] },
     { key:"TIER2", label:"Tier 2 — Growth",        rgb:[29,78,216]  },
     { key:"TIER3", label:"Tier 3 — Standard",      rgb:[5,150,105]  },
   ]
   tierDefs.forEach(({ key, label, rgb }, i) => {
-    const stat = ms.byTier[key]
+    const stat  = ms.byTier[key]
     const sched = stat.scheduled ?? stat.total
     const pend  = stat.pending ?? Math.max(0, sched - stat.done)
-    const pct  = sched > 0 ? Math.round(stat.done / sched * 100) : 0
-    const cx   = ML + (i + 1) * (mCardW + 2)
-    // shadow
-    doc.setFillColor(200, 210, 220)
-    doc.roundedRect(cx + 1, y + 1, mCardW, 22, 2, 2, "F")
+    const pct   = sched > 0 ? Math.round(stat.done / sched * 100) : 0
+    const cx    = ML + i * (mtW + 4)
     // body
     doc.setFillColor(255, 255, 255)
-    doc.roundedRect(cx, y, mCardW, 22, 2, 2, "F")
+    doc.roundedRect(cx, y, mtW, 22, 2, 2, "F")
     doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.3)
-    doc.roundedRect(cx, y, mCardW, 22, 2, 2, "S")
+    doc.roundedRect(cx, y, mtW, 22, 2, 2, "S")
     // stripe
     doc.setFillColor(...rgb)
-    doc.roundedRect(cx, y, mCardW, 7, 2, 2, "F")
-    doc.rect(cx, y + 3, mCardW, 4, "F")
+    doc.roundedRect(cx, y, mtW, 7, 2, 2, "F")
+    doc.rect(cx, y + 3, mtW, 4, "F")
     // label
     doc.setTextColor(255, 255, 255)
-    doc.setFont("helvetica","bold"); doc.setFontSize(5.5)
-    doc.text(label, cx + mCardW / 2, y + 5, { align:"center" })
-    // count
+    doc.setFont("helvetica","bold"); doc.setFontSize(6)
+    doc.text(label, cx + mtW / 2, y + 5, { align:"center" })
+    // done / scheduled
     doc.setTextColor(...NAVY)
     doc.setFontSize(14)
-    doc.text(String(stat.done), cx + mCardW / 2, y + 14.5, { align:"center" })
+    doc.text(`${stat.done} / ${sched}`, cx + mtW / 2, y + 14.5, { align:"center" })
     // sub
     doc.setFont("helvetica","normal"); doc.setFontSize(5.5)
     doc.setTextColor(107, 114, 128)
-    doc.text(`/ ${sched}  ·  ${pend} pending  ·  ${pct}%`, cx + mCardW / 2, y + 19.5, { align:"center" })
+    doc.text(`${pend} pending  ·  ${pct}%`, cx + mtW / 2, y + 19.5, { align:"center" })
   })
   y += 26
 
