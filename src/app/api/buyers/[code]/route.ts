@@ -22,33 +22,6 @@ function makeCode(name: string) {
   return "raw_" + name.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 40)
 }
 
-// Strip common business suffixes before comparing names
-function stripSuffix(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\b(llc|ltd|co|corp|inc|pvt|private|limited|company|trading|group|international|intl|fze|fzc|est|establishment|enterprises|enterprise|brothers|bro|sons|industries|ind|import|export|foods|food|rice|general|gen)\b/g, " ")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-}
-
-// Returns true when two buyer names are clearly about the same entity
-// threshold: 0.6 when country already matches (less strict), 0.7 otherwise
-function namesSimilar(a: string, b: string, threshold = 0.7): boolean {
-  const na = stripSuffix(a)
-  const nb = stripSuffix(b)
-  if (!na || !nb) return false
-  if (na === nb) return true
-  // Containment: "HARIB" is contained in "HARIB RICE CO LLC"
-  if (na.includes(nb) || nb.includes(na)) return true
-  // Word-overlap
-  const wordsA = new Set(na.split(" ").filter((w) => w.length >= 3))
-  const wordsB = nb.split(" ").filter((w) => w.length >= 3)
-  if (!wordsA.size || !wordsB.length) return false
-  const common = wordsB.filter((w) => wordsA.has(w)).length
-  return common >= Math.max(1, Math.floor(Math.min(wordsA.size, wordsB.length) * threshold))
-}
-
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ code: string }> }
@@ -90,25 +63,18 @@ export async function GET(
   const targetName    = canonName || bmDirect?.buyerCompanyName || canonical?.canonicalBuyerName || code
   const targetCountry = (canonical?.country || bmDirect?.countries || "").toUpperCase().trim()
 
-  // ── Step 2: name+country matcher ────────────────────────────────────────────
-  // PRIMARY: buyer name (fuzzy) + country — no code dependency
+  // ── Step 2: PRECISE buyer matcher ───────────────────────────────────────────
+  // Match ONLY this buyer — no fuzzy word-overlap (that over-matched other buyers
+  // sharing common words like "For / Import / Export / General"). This keeps the
+  // workspace consistent with Live Data / Target vs Actual / Buyers list.
+  const bmCode = (bmDirect?.buyerCode || canonical?.buyerCode || "").toUpperCase().trim()
   const matchesThisBuyer = (r: { buyerCompanyName: string; buyerCode: string; countries?: string }): boolean => {
     // A. Alias map exact match (most trusted)
     if (aliasMap.get(normName(r.buyerCompanyName)) === code) return true
-
-    const piName    = r.buyerCompanyName
-    const piCountry = (r.countries ?? "").toUpperCase().trim()
-    const hasSameCountry = targetCountry && piCountry && piCountry === targetCountry
-
-    // B. Exact name match (with or without country)
-    if (normName(piName) === normName(targetName)) return true
-
-    // C. Fuzzy name + country — 60% threshold (country gives extra confidence)
-    if (hasSameCountry && namesSimilar(piName, targetName, 0.6)) return true
-
-    // D. Fuzzy name only — 70% threshold (stricter without country)
-    if (!targetCountry && namesSimilar(piName, targetName, 0.7)) return true
-
+    // B. Buyer code exact match
+    if (bmCode && (r.buyerCode ?? "").toUpperCase().trim() === bmCode) return true
+    // C. Exact (normalized) name match
+    if (normName(r.buyerCompanyName) === normName(targetName)) return true
     return false
   }
 
@@ -134,11 +100,10 @@ export async function GET(
   // Display name: prefer real name found in PI records over canonical/code
   const displayName = matchedAllPI[0]?.buyerCompanyName || targetName
 
-  // Buyer master — try direct code match first, then by name
+  // Buyer master — direct code match first, then exact name (no fuzzy)
   const bm = bmDirect ?? buyerMaster.find(
     (b) => b.buyerCode === (canonical?.buyerCode || matchedAllPI[0]?.buyerCode)
       || normName(b.buyerCompanyName) === normName(displayName)
-      || namesSimilar(b.buyerCompanyName, displayName)
   )
 
   // Aggregate performance — always currentFY as actual, previousFY as prevActual
@@ -146,13 +111,9 @@ export async function GET(
   const prevActual = sumContainers(matchedPreviousPI)
   const orderCount = matchedCurrentPI.length
 
-  // Target — currentFY: exact name first, fuzzy name fallback
+  // Target — currentFY: exact (normalized) name match only (no fuzzy)
   const tgtActive = targets
-    .filter((t) => {
-      if (t.financialYear !== currentFY) return false
-      if (normName(t.buyerCompanyName) === normName(displayName)) return true
-      return namesSimilar(t.buyerCompanyName, displayName)
-    })
+    .filter((t) => t.financialYear === currentFY && normName(t.buyerCompanyName) === normName(displayName))
     .reduce((s, t) => s + t.currentYearTargetContainers, 0)
   const target = canonical?.targetFY2026 || tgtActive
 
@@ -191,10 +152,9 @@ export async function GET(
   const cutOff = "2026-04-01"
   const isNewBuyer = matchedAllPI.every((r) => r.piDate >= cutOff)
 
-  // Tier from "80/20 Buyers" sheet — exact name first, fuzzy fallback
+  // Tier from "80/20 Buyers" sheet — exact (normalized) name match only
   const sheetBuyer = buyers8020.find(
     (b) => b.buyerName.toLowerCase().trim() === displayName.toLowerCase().trim()
-      || namesSimilar(b.buyerName, displayName)
   )
   const tier: BuyerTier =
     sheetBuyer?.tier === "TIER1" ? "TIER1" :
