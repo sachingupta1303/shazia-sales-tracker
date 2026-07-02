@@ -22,8 +22,10 @@ import { APP_BASE_URL } from "./mailer"
 export type DailyStatus = "CRITICAL" | "ON_TRACK" | "OVER_ACHIEVED" | "NO_TARGET"
 
 export interface DailyBuyerRow {
-  buyerName:   string
-  country:     string
+  buyerName:        string
+  country:          string
+  salesPerson:      string
+  salesCoordinator: string
   tier:        "TIER1" | "TIER2" | "TIER3" | "OTHERS"
   yearTarget:  number
   monthTarget: number
@@ -86,31 +88,47 @@ export async function buildDailyBuyerReport(): Promise<DailyReport> {
   const fytdActualByName  = sumContainersBy(fyPI,    (r) => norm(r.buyerCompanyName))
   const monthActualByName = sumContainersBy(monthPI, (r) => norm(r.buyerCompanyName))
 
+  // Sales person + coordinator per buyer, from their PI records (fallback source)
+  const piInfoByName = new Map<string, { sp: string; coord: string }>()
+  for (const r of fyPI) {
+    const k = norm(r.buyerCompanyName)
+    const ex = piInfoByName.get(k)
+    if (!ex) piInfoByName.set(k, { sp: r.salesPerson || "", coord: r.salesCoordinator || "" })
+    else {
+      if (!ex.sp && r.salesPerson)        ex.sp = r.salesPerson
+      if (!ex.coord && r.salesCoordinator) ex.coord = r.salesCoordinator
+    }
+  }
+
   // Buyer universe: 80/20 (tier + target) → TARGET_MASTER → PI (others with orders)
-  type U = { name: string; country: string; tier: DailyBuyerRow["tier"]; yearTarget: number }
+  type U = { name: string; country: string; tier: DailyBuyerRow["tier"]; yearTarget: number; salesPerson: string; salesCoordinator: string }
   const map = new Map<string, U>()
 
   for (const b of buyers) {
     map.set(norm(b.buyerName), {
       name: b.buyerName, country: b.country,
       tier: b.tier, yearTarget: b.annualTarget,
+      salesPerson: b.responsiblePerson || "", salesCoordinator: b.salesCoordinator || "",
     })
   }
   for (const t of targets) {
     const k = norm(t.buyerCompanyName)
     const ex = map.get(k)
     if (!ex) {
-      map.set(k, { name: t.buyerCompanyName, country: t.countries, tier: "OTHERS", yearTarget: t.currentYearTargetContainers })
+      map.set(k, { name: t.buyerCompanyName, country: t.countries, tier: "OTHERS", yearTarget: t.currentYearTargetContainers, salesPerson: t.salesPerson || "", salesCoordinator: "" })
     } else if (!ex.yearTarget) {
       ex.yearTarget = t.currentYearTargetContainers
     }
   }
   for (const r of fyPI) {
     const k = norm(r.buyerCompanyName)
-    if (!map.has(k)) map.set(k, { name: r.buyerCompanyName, country: r.countries, tier: "OTHERS", yearTarget: 0 })
+    if (!map.has(k)) map.set(k, { name: r.buyerCompanyName, country: r.countries, tier: "OTHERS", yearTarget: 0, salesPerson: r.salesPerson || "", salesCoordinator: r.salesCoordinator || "" })
   }
 
   let rows: DailyBuyerRow[] = [...map.entries()].map(([k, b]) => {
+    const pinfo = piInfoByName.get(k)
+    const salesPerson      = b.salesPerson      || pinfo?.sp    || ""
+    const salesCoordinator = b.salesCoordinator || pinfo?.coord || ""
     const yearTarget  = b.yearTarget
     const monthTarget = yearTarget / 12
     const weekTarget  = (yearTarget / 52) * week
@@ -126,7 +144,7 @@ export async function buildDailyBuyerReport(): Promise<DailyReport> {
       status = tillNowPct >= 100 ? "OVER_ACHIEVED" : tillNowPct >= 70 ? "ON_TRACK" : "CRITICAL"
     }
     return {
-      buyerName: b.name, country: b.country, tier: b.tier,
+      buyerName: b.name, country: b.country, salesPerson, salesCoordinator, tier: b.tier,
       yearTarget, monthTarget, monthActual, weekTarget, weekActual, tillNowPct, status,
     }
   }).filter((r) => r.yearTarget > 0 || r.weekActual > 0)
@@ -190,6 +208,9 @@ export function renderDailyReportHtml(report: DailyReport, dateLabel: string): s
       + `<td align="center" style="${p};color:#9ca3af;font-size:11px">${i + 1}</td>`
       + `<td style="${p};font-weight:600;color:#0f172a">${escapeHtml(r.buyerName)}</td>`
       + `<td style="${p};color:#475569">${escapeHtml(r.country)}</td>`
+      + `<td style="${p};color:#334155">${escapeHtml(r.salesPerson) || "—"}`
+        + (r.salesCoordinator ? `<div style="font-size:9px;color:#9ca3af;font-weight:400">Coord: ${escapeHtml(r.salesCoordinator)}</div>` : "")
+      + `</td>`
       + `<td align="center" style="${p}"><span style="background:${tc.bg};color:${tc.fg};font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px">${tierLabel}</span></td>`
       + `<td align="right" style="${p};color:#475569">${n1(r.monthTarget)}</td>`
       + `<td align="right" style="${p};font-weight:600;color:#0f172a">${n0(r.monthActual)}</td>`
@@ -231,10 +252,10 @@ export function renderDailyReportHtml(report: DailyReport, dateLabel: string): s
       </div>
 
       <div style="padding:8px 16px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch">
-        <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:880px">
           <thead>
             <tr style="background:#0f172a">
-              ${th("#", "center")}${th("Buyer")}${th("Country")}${th("Tier", "center")}
+              ${th("#", "center")}${th("Buyer")}${th("Country")}${th("Sales Person")}${th("Tier", "center")}
               ${th("Month Tgt", "right")}${th("Month Act", "right")}
               ${th("Till Week Tgt", "right")}${th("Till Week Act", "right")}
               ${th("Till-now %", "right")}${th("Status", "center")}${th("Year Tgt", "right")}
