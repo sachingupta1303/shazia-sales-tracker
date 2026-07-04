@@ -33,10 +33,17 @@ export async function GET(req: Request) {
   const url    = new URL(req.url)
   const format = url.searchParams.get("format")
   const send   = url.searchParams.get("send")
+  const status = (url.searchParams.get("status") || "").toUpperCase()  // ACHIEVED-> OVER_ACHIEVED etc.
   const to     = url.searchParams.get("to") || session.user.email || ""
 
   const report    = await buildDailyBuyerReport()
   const dateLabel = todayLabelIST()
+
+  // Optional status filter for preview/PDF/JSON (email always sends the full report)
+  const statusMap: Record<string, string> = { ACHIEVED: "OVER_ACHIEVED", ON_TRACK: "ON_TRACK", CRITICAL: "CRITICAL", OVER_ACHIEVED: "OVER_ACHIEVED" }
+  if (status && statusMap[status] && send !== "1") {
+    report.rows = report.rows.filter((r) => r.status === statusMap[status])
+  }
 
   // ── Send email ──
   if (send === "1") {
