@@ -90,6 +90,11 @@ export function invalidateSheetCache(spreadsheetId: string, sheetName: string): 
   }
 }
 
+/** Clear ALL cached sheet reads — used by a manual "Sync now" after direct sheet edits. */
+export function clearAllSheetCache(): void {
+  cache.clear()
+}
+
 // ─── Tab discovery + auto-bootstrap ──────────────────────────────────────────
 
 const tabListCache = new Map<string, { tabs: string[]; timestamp: number }>()

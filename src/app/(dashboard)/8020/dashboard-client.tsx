@@ -379,6 +379,13 @@ export function Dashboard8020Client({ user }: { user: AppUser }) {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // Sync now — clears the server cache (so direct sheet edits reflect immediately), then refetches
+  const syncNow = useCallback(async () => {
+    setLoading(true)
+    try { await fetch("/api/admin/refresh-cache", { method: "POST" }) } catch {}
+    await fetchAll()
+  }, [fetchAll])
+
   function handleMeetingDone(updated: MeetingSchedule) {
     setMeetData((prev) => prev ? {
       ...prev,
@@ -454,10 +461,11 @@ export function Dashboard8020Client({ user }: { user: AppUser }) {
             📊 Open Sheet
           </a>
           <button
-            onClick={fetchAll}
+            onClick={syncNow}
+            title="Clear cache & reload — reflects direct Google-Sheet edits immediately"
             className="text-xs px-3 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1.5"
           >
-            ↻ Refresh
+            ↻ Refresh (sync sheet)
           </button>
         </div>
       </div>
