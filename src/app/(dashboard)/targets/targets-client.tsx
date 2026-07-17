@@ -383,7 +383,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const [statusFilter, setStatusFilter] = useState<string>("")  // "" | ACHIEVED | ON_TRACK | CRITICAL
   const [loading,  setLoading] = useState(true)
   const [error,    setError]   = useState("")
-  const [options,  setOptions] = useState<{ countries: string[]; salesPersons: string[] }>({ countries: [], salesPersons: [] })
+  const [options,  setOptions] = useState<{ countries: string[]; salesPersons: string[]; salesCoordinators: string[] }>({ countries: [], salesPersons: [], salesCoordinators: [] })
 
   const [countryData, setCountryData] = useState<{ rows: CountryPerformance[]; meta: any } | null>(null)
   const [buyerData,   setBuyerData]   = useState<{ rows: BuyerPerformance[];   summary: any; meta: any } | null>(null)
@@ -394,8 +394,9 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
 
   const buildParams = useCallback((f: FilterState) => {
     const p = new URLSearchParams()
-    if (f.country)     p.set("country",     f.country)
-    if (f.salesPerson) p.set("salesPerson", f.salesPerson)
+    if (f.country)          p.set("country",          f.country)
+    if (f.salesPerson)      p.set("salesPerson",      f.salesPerson)
+    if (f.salesCoordinator) p.set("salesCoordinator", f.salesCoordinator)
     if (f.fy)          p.set("fy",          f.fy)
     if (f.fyMonth)     p.set("fyMonth",     f.fyMonth)
     if (f.fyQuarter)   p.set("fyQuarter",   f.fyQuarter)
@@ -417,6 +418,13 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         const res = await fetch(`/api/performance/buyers?${qs}`)
         const d   = await res.json()
         setBuyerData(d)
+        if (d.filterOptions) {
+          setOptions((o) => ({
+            countries:         d.filterOptions.countries?.length ? d.filterOptions.countries : o.countries,
+            salesPersons:      d.filterOptions.salesPersons ?? o.salesPersons,
+            salesCoordinators: d.filterOptions.salesCoordinators ?? o.salesCoordinators,
+          }))
+        }
       } else if (t === "salesperson") {
         const res = await fetch(`/api/performance/salesperson?${qs}`)
         const d   = await res.json()
@@ -487,6 +495,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         showFY={true}
         showVariety={false}
         showSP={!isSP && tab !== "salesperson" && tab !== "coordinator"}
+        showCoordinator={tab === "buyer"}
       />
 
       {/* Buyer tab — tier filter pills */}

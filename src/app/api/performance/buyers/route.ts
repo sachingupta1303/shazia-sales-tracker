@@ -19,6 +19,7 @@ interface BrandShare { brand: string; containers: number; pct: number }
 interface BuyerPerformanceRow extends BuyerPerformance {
   segment:                BuyerSegment
   isKeyAccount:           boolean
+  salesCoordinator:       string
   currentYearContainers:  number
   previousYearContainers: number
   growthPct:              number | null
@@ -40,6 +41,7 @@ export async function GET(req: Request) {
 
     const countryFilter = url.searchParams.get("country")     || undefined
     const spFilter      = url.searchParams.get("salesPerson") || undefined
+    const coordFilter   = url.searchParams.get("salesCoordinator") || undefined
     const tierFilter    = url.searchParams.get("tier")        || undefined
     const segmentFilter = url.searchParams.get("segment")     || undefined
     const buyerFilter   = url.searchParams.get("buyer")       || undefined
@@ -64,15 +66,23 @@ export async function GET(req: Request) {
       get8020Buyers(),
     ])
 
-    // Tier map from "80/20 Buyers" sheet — name → tier
-    const tierByName = new Map<string, BuyerTier>()
+    // Tier + coordinator maps from "80/20 Buyers" sheet — name → tier / coordinator
+    const tierByName  = new Map<string, BuyerTier>()
+    const coordByName = new Map<string, string>()
     for (const b of buyers8020) {
       const t: BuyerTier =
         b.tier === "TIER1" ? "TIER1" :
         b.tier === "TIER2" ? "TIER2" :
         b.tier === "TIER3" ? "TIER3" : "OTHERS"
       tierByName.set(b.buyerName.toLowerCase().trim(), t)
+      if (b.salesCoordinator) coordByName.set(b.buyerName.toLowerCase().trim(), b.salesCoordinator)
     }
+    // Fallback coordinator from PI records (buyer name → coordinator)
+    for (const r of allPI) {
+      const k = normName(r.buyerCompanyName)
+      if (!coordByName.has(k) && r.salesCoordinator) coordByName.set(k, r.salesCoordinator)
+    }
+    const coordOf = (name: string) => coordByName.get(normName(name)) ?? ""
 
     const canonByCode = new Map(canonical.map((c) => [c.canonicalBuyerCode, c]))
 
@@ -195,6 +205,7 @@ export async function GET(req: Request) {
         buyerName:               t.buyerCompanyName,
         country:                 t.countries,
         salesPerson:             t.salesPerson,
+        salesCoordinator:        coordOf(t.buyerCompanyName),
         tier:                    tierByName.get(t.buyerCompanyName.toLowerCase().trim()) ?? "OTHERS",
         previousYear:            parseFloat(prevYear.toFixed(1)),
         target,
@@ -241,6 +252,7 @@ export async function GET(req: Request) {
         buyerName:               sample.buyerCompanyName,
         country:                 sample.countries,
         salesPerson:             sample.salesPerson,
+        salesCoordinator:        coordOf(sample.buyerCompanyName) || sample.salesCoordinator || "",
         tier:                    tierByName.get(sample.buyerCompanyName.toLowerCase().trim()) ?? "OTHERS",
         previousYear:            parseFloat(prevYear.toFixed(1)),
         target:                  0,
@@ -262,11 +274,30 @@ export async function GET(req: Request) {
     }
     const allRows = [...rows, ...extraRows]
 
+    // Filter-dropdown options — from the FULL unfiltered data (so the lists don't
+    // shrink after a filter is applied).
+    const filterOptions = {
+      salesPersons: [...new Set([
+        ...targets.map((t) => t.salesPerson),
+        ...allPI.map((r) => r.salesPerson),
+        ...buyers8020.map((b) => b.responsiblePerson),
+      ].filter(Boolean))].sort(),
+      salesCoordinators: [...new Set([
+        ...buyers8020.map((b) => b.salesCoordinator),
+        ...allPI.map((r) => r.salesCoordinator),
+      ].filter(Boolean))].sort(),
+      countries: [...new Set([
+        ...targets.map((t) => t.countries),
+        ...allPI.map((r) => r.countries),
+      ].filter(Boolean))].sort(),
+    }
+
     let finalRows: BuyerPerformanceRow[] = []
     if (tierFilter)    finalRows = allRows.filter((r) => r.tier === tierFilter)
     else finalRows = allRows
 
     if (segmentFilter) finalRows = finalRows.filter((r) => r.segment === segmentFilter)
+    if (coordFilter)   finalRows = finalRows.filter((r) => r.salesCoordinator.toLowerCase() === coordFilter.toLowerCase())
     if (buyerFilter) {
       const q = buyerFilter.toLowerCase()
       finalRows = finalRows.filter((r) => r.buyerName.toLowerCase().includes(q))
@@ -300,6 +331,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       rows: finalRows,
       summary,
+      filterOptions,
       meta: {
         fy, prevFY, week,
         total:        finalRows.length,

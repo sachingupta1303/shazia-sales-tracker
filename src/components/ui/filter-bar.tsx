@@ -4,24 +4,26 @@ import { cn } from "@/lib/utils"
 import { getCurrentFY, getPreviousFY } from "@/lib/fy-utils"
 
 export interface FilterState {
-  country?:     string
-  salesPerson?: string
-  variety?:     string
-  fyMonth?:     string
-  fyQuarter?:   string
-  fyWeek?:      string
-  fy?:          string
-  search?:      string
+  country?:          string
+  salesPerson?:      string
+  salesCoordinator?: string
+  variety?:          string
+  fyMonth?:          string
+  fyQuarter?:        string
+  fyWeek?:           string
+  fy?:               string
+  search?:           string
 }
 
 interface FilterBarProps {
   filters:       FilterState
   onChange:      (filters: FilterState) => void
-  options?:      { countries?: string[]; salesPersons?: string[] }
+  options?:      { countries?: string[]; salesPersons?: string[]; salesCoordinators?: string[] }
   showSearch?:   boolean
   showFY?:       boolean
   showVariety?:  boolean
   showSP?:       boolean   // hide for SALES_PERSON role
+  showCoordinator?: boolean
   className?:    string
 }
 
@@ -33,7 +35,7 @@ const FY_MONTHS = [
 export function FilterBar({
   filters, onChange, options,
   showSearch = false, showFY = false,
-  showVariety = true, showSP = true, className,
+  showVariety = true, showSP = true, showCoordinator = false, className,
 }: FilterBarProps) {
   const set = (key: keyof FilterState, val: string) =>
     onChange({ ...filters, [key]: val || undefined })
@@ -77,6 +79,20 @@ export function FilterBar({
             <option value="">All Sales Persons</option>
             {options?.salesPersons?.map((s) => (
               <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Sales Coordinator */}
+        {showCoordinator && (
+          <select
+            value={filters.salesCoordinator || ""}
+            onChange={(e) => set("salesCoordinator", e.target.value)}
+            className="text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 max-w-[170px]"
+          >
+            <option value="">All Coordinators</option>
+            {options?.salesCoordinators?.map((c) => (
+              <option key={c} value={c}>{c}</option>
             ))}
           </select>
         )}
