@@ -147,13 +147,31 @@ export async function getPIRecords(): Promise<PIRecord[]> {
     const [headerRow, ...dataRows] = rows
     const h = buildHeaderMap(headerRow)
 
+    // ── Merge buyer-name variants into one canonical name ──────────────────────
+    // A buyer may raise PIs under different name spellings. If a name is mapped in
+    // the alias map (BUYER_ALIAS_MAP → canonical code), rewrite it to that
+    // canonical buyer's name so EVERY view (Live Data, Target vs Actual, workspace,
+    // MIS, daily report) treats the variants as a single buyer.
+    const [aliasMap, canon] = await Promise.all([getBuyerAliasMap(), getCanonicalBuyers()])
+    const codeIsName = (s: string) => !/^[A-Z]{2,6}\d{2,6}$/i.test(s.trim())
+    const codeToName = new Map<string, string>()
+    for (const c of canon) {
+      if (c.canonicalBuyerName && codeIsName(c.canonicalBuyerName)) {
+        codeToName.set(c.canonicalBuyerCode, c.canonicalBuyerName)
+      }
+    }
+    const canonicalizeName = (name: string): string => {
+      const code = aliasMap.get(name.toLowerCase().trim())
+      return (code && codeToName.get(code)) || name
+    }
+
     return dataRows
       .filter((r) => r[h["PI Number"]] && r[h["PI Date"]])
       .map((r) => ({
         piNumber:          getCell(r, h, "PI Number"),
         piDate:            getCell(r, h, "PI Date"),
         crmEmail:          getCell(r, h, "CRM Email"),
-        buyerCompanyName:  getCell(r, h, "Buyer Company Name"),
+        buyerCompanyName:  canonicalizeName(getCell(r, h, "Buyer Company Name")),
         buyerCode:         getCell(r, h, "Buyer Code"),
         countries:         getCell(r, h, "Countries"),
         portOfDischarge:   getCell(r, h, "Port of Discharge"),
@@ -1091,6 +1109,7 @@ export async function updateAliasMapping(params: {
       source:             "ADMIN_UI",
       addedBy:            "admin",
     })
+    invalidateMemo("buyer_alias_map", "canonical_buyers", "pi_records")
     return true
   }
   // Read existing row
@@ -1102,6 +1121,7 @@ export async function updateAliasMapping(params: {
   if (h["canonicalBuyerCode"] !== undefined) updated[h["canonicalBuyerCode"]] = params.canonicalBuyerCode
   if (h["matchConfidence"]    !== undefined) updated[h["matchConfidence"]]    = params.matchConfidence
   await updateSheetRow(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP, rowIdx, updated)
+  invalidateMemo("buyer_alias_map", "canonical_buyers", "pi_records")
   return true
 }
 
