@@ -951,7 +951,8 @@ export async function updateCanonicalBuyer(
       notes:              updates.notes        ?? "",
     }
     await addCanonicalBuyer(buyer)
-    invalidateMemo("canonical_buyers", "buyer_alias_map")
+    invalidateSheetCache(SHEETS.CANONICAL_MAP, SHEET_NAMES.CANONICAL_BUYER_MASTER)
+    invalidateMemo("canonical_buyers", "buyer_alias_map", "pi_records")
     return true
   }
 
@@ -980,7 +981,8 @@ export async function updateCanonicalBuyer(
   setCell("notes",              updates.notes)
 
   await updateSheetRow(SHEETS.CANONICAL_MAP, SHEET_NAMES.CANONICAL_BUYER_MASTER, rowIdx, updated)
-  invalidateMemo("canonical_buyers", "buyer_alias_map")
+  invalidateSheetCache(SHEETS.CANONICAL_MAP, SHEET_NAMES.CANONICAL_BUYER_MASTER)
+    invalidateMemo("canonical_buyers", "buyer_alias_map", "pi_records")
   return true
 }
 
@@ -1113,6 +1115,7 @@ export async function updateAliasMapping(params: {
       source:             "ADMIN_UI",
       addedBy:            "admin",
     })
+    invalidateSheetCache(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP)
     invalidateMemo("buyer_alias_map", "canonical_buyers", "pi_records")
     return true
   }
@@ -1125,6 +1128,7 @@ export async function updateAliasMapping(params: {
   if (h["canonicalBuyerCode"] !== undefined) updated[h["canonicalBuyerCode"]] = params.canonicalBuyerCode
   if (h["matchConfidence"]    !== undefined) updated[h["matchConfidence"]]    = params.matchConfidence
   await updateSheetRow(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP, rowIdx, updated)
+  invalidateSheetCache(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP)
   invalidateMemo("buyer_alias_map", "canonical_buyers", "pi_records")
   return true
 }

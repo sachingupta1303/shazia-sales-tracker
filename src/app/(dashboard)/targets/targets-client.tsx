@@ -442,11 +442,19 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
 
   const week = countryData?.meta?.week ?? buyerData?.meta?.week ?? spData?.meta?.week ?? coordData?.meta?.week ?? 6
 
-  // Client-side tier + status filters — applied after data loads
+  // Client-side search (buyer / country / person name)
+  const q = (filters.search || "").toLowerCase().trim()
+  const matchQ = (...vals: (string | undefined)[]) => !q || vals.some((v) => (v ?? "").toLowerCase().includes(q))
+
+  // Client-side tier + status + search filters — applied after data loads
   const filteredBuyerRows = (buyerData?.rows ?? []).filter(
     (r) => (!tierFilter || r.tier === tierFilter)
         && (!statusFilter || deriveStatus3(r) === statusFilter)
+        && matchQ(r.buyerName, r.country, r.salesPerson)
   )
+  const countryRows = (countryData?.rows ?? []).filter((r) => matchQ(r.country))
+  const spRows      = (spData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
+  const coordRows   = (coordData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
 
   // Summary cards always reflect the filtered rows (client-side)
   const filteredSummary = tab === "buyer" && buyerData
@@ -492,6 +500,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         filters={filters}
         onChange={(f) => setFilters(f)}
         options={options}
+        showSearch={true}
         showFY={true}
         showVariety={false}
         showSP={!isSP && tab !== "salesperson" && tab !== "coordinator"}
@@ -559,10 +568,10 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <span className="text-sm font-semibold text-gray-700">
             {loading ? "Loading…" : (
-              tab === "country"     ? `${countryData?.rows.length ?? 0} countries` :
+              tab === "country"     ? `${countryRows.length} countries` :
               tab === "buyer"       ? `${filteredBuyerRows.length} buyers`    :
-              tab === "salesperson" ? `${spData?.rows.length     ?? 0} sales persons` :
-                                      `${coordData?.rows.length  ?? 0} sales coordinators`
+              tab === "salesperson" ? `${spRows.length} sales persons` :
+                                      `${coordRows.length} sales coordinators`
             )}
           </span>
           <span className="text-xs text-gray-400">FY Week {week}</span>
@@ -571,17 +580,17 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         {/* Desktop tables */}
         {!loading && (
           <>
-            {tab === "country"    && countryData && <div className="hidden md:block"><CountryTable rows={countryData.rows} week={week} /></div>}
+            {tab === "country"    && countryData && <div className="hidden md:block"><CountryTable rows={countryRows} week={week} /></div>}
             {tab === "buyer"      && buyerData   && <div className="hidden md:block"><BuyerTable   rows={filteredBuyerRows} week={week} showSP={!isSP} /></div>}
-            {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spData.rows}      week={week} /></div>}
-            {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordData.rows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
+            {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} /></div>}
+            {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordRows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
           </>
         )}
 
         {/* Mobile cards */}
         {!loading && (
           <div className="md:hidden divide-y divide-gray-100">
-            {tab === "country" && countryData?.rows.map((r) => (
+            {tab === "country" && countryRows.map((r) => (
               <MobilePerformanceCard key={r.country} title={r.country}
                 sub={`${r.activeBuyers} active buyers`}
                 target={r.target} actual={r.actual} gap={r.gap}
@@ -594,13 +603,13 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
                 pct={r.achievementPercent} status={r.status}
                 badge={<TierBadge tier={r.tier} />} />
             ))}
-            {tab === "salesperson" && spData?.rows.map((r) => (
+            {tab === "salesperson" && spRows.map((r) => (
               <MobilePerformanceCard key={r.salesPerson} title={r.salesPerson}
                 sub={`${r.activeBuyers} active buyers`}
                 target={r.target} actual={r.actual} gap={r.gap}
                 pct={r.achievementPercent} status={r.status} />
             ))}
-            {tab === "coordinator" && coordData?.rows.map((r) => (
+            {tab === "coordinator" && coordRows.map((r) => (
               <MobilePerformanceCard key={r.salesPerson} title={r.salesPerson}
                 sub={`${r.activeBuyers} active buyers`}
                 target={r.target} actual={r.actual} gap={r.gap}
