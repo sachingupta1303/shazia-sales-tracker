@@ -897,6 +897,8 @@ export async function addCanonicalBuyer(buyer: import("@/types").CanonicalBuyer)
   ]])
 }
 
+const ALIAS_HEADERS = ["aliasName", "canonicalBuyerCode", "buyerCode", "matchConfidence", "source", "addedBy", "addedAt"]
+
 export async function addBuyerAlias(alias: {
   aliasName:          string
   canonicalBuyerCode: string
@@ -906,6 +908,7 @@ export async function addBuyerAlias(alias: {
   addedBy:            string
 }): Promise<void> {
   if (!SHEETS.CANONICAL_MAP) throw new Error("CANONICAL_BUYER_MAP_SHEET_ID not configured")
+  await ensureSheetExists(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP, ALIAS_HEADERS)
   await appendToSheet(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP, [[
     alias.aliasName,
     alias.canonicalBuyerCode,
@@ -1096,6 +1099,7 @@ export async function updateAliasMapping(params: {
   matchConfidence:    "HIGH" | "MEDIUM"
 }): Promise<boolean> {
   if (!SHEETS.CANONICAL_MAP) return false
+  await ensureSheetExists(SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP, ALIAS_HEADERS)
   const rowIdx = await findRowIndexByKey(
     SHEETS.CANONICAL_MAP, SHEET_NAMES.BUYER_ALIAS_MAP, "aliasName", params.aliasName
   )
