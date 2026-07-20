@@ -17,6 +17,12 @@ const ADMIN_TOOLS = [
     icon:        "📊",
   },
   {
+    title:       "🔗 Merge Buyers",
+    description: "Same buyer with two names? Merge the variants into one so target + actual line up everywhere",
+    href:        "/admin/merge-buyers",
+    icon:        "🔗",
+  },
+  {
     title:       "Buyer Ownership",
     description: "Reassign primary or backup owners · view reassignment history",
     href:        "/admin/ownership",
