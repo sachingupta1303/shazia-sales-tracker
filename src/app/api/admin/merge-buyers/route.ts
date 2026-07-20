@@ -63,22 +63,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Primary and variant names are the same" }, { status: 400 })
   }
 
-  const [allPI, canon] = await Promise.all([getPIRecords(), getCanonicalBuyers()])
+  try {
+    const [allPI, canon] = await Promise.all([getPIRecords(), getCanonicalBuyers()])
 
-  // Find (or create) the canonical buyer for the primary name
-  let target = canon.find((c) => norm(c.canonicalBuyerName) === norm(primaryName))
-  let code = target?.canonicalBuyerCode
-  if (!code) {
-    code = makeCode(primaryName)
-    const country =
-      allPI.find((r) => norm(r.buyerCompanyName) === norm(primaryName))?.countries ||
-      allPI.find((r) => norm(r.buyerCompanyName) === norm(variantName))?.countries || ""
-    await updateCanonicalBuyer(code, { canonicalBuyerName: primaryName, country })
+    // Find (or create) the canonical buyer for the primary name
+    const target = canon.find((c) => norm(c.canonicalBuyerName) === norm(primaryName))
+    let code = target?.canonicalBuyerCode
+    if (!code) {
+      code = makeCode(primaryName)
+      const country =
+        allPI.find((r) => norm(r.buyerCompanyName) === norm(primaryName))?.countries ||
+        allPI.find((r) => norm(r.buyerCompanyName) === norm(variantName))?.countries || ""
+      const created = await updateCanonicalBuyer(code, { canonicalBuyerName: primaryName, country })
+      if (!created) return NextResponse.json({ error: "Could not create canonical buyer (canonical map sheet not writable?)" }, { status: 400 })
+    }
+
+    // Alias the variant name → the primary's canonical code
+    const ok = await updateAliasMapping({ aliasName: variantName, canonicalBuyerCode: code, matchConfidence: "HIGH" })
+    if (!ok) return NextResponse.json({ error: "Alias write failed (canonical map sheet not writable?)" }, { status: 400 })
+
+    return NextResponse.json({ ok: true, primaryName, variantName, code })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown error"
+    console.error("[merge-buyers] ERROR:", msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
-
-  // Alias the variant name → the primary's canonical code
-  const ok = await updateAliasMapping({ aliasName: variantName, canonicalBuyerCode: code, matchConfidence: "HIGH" })
-  if (!ok) return NextResponse.json({ error: "merge_failed" }, { status: 400 })
-
-  return NextResponse.json({ ok: true, primaryName, variantName, code })
 }
