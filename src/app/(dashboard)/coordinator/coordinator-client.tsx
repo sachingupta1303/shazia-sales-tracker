@@ -37,6 +37,7 @@ export function CoordinatorClient() {
   const [search, setSearch]   = useState("")
   const [coord, setCoord]     = useState("")
   const [sp, setSP]           = useState("")
+  const [country, setCountry] = useState("")
   const [selected, setSelected] = useState<Buyer | null>(null)
   const [widths, setWidths]   = useState<number[]>(COLS.map((c) => c.w))
   const resizing = useRef<{ i: number; startX: number; startW: number } | null>(null)
@@ -74,9 +75,10 @@ export function CoordinatorClient() {
     return data.buyers.filter((b) =>
       (!coord || b.salesCoordinator === coord) &&
       (!sp || b.salesPerson === sp) &&
+      (!country || b.country === country) &&
       (!q || b.buyerName.toLowerCase().includes(q) || b.country.toLowerCase().includes(q))
     )
-  }, [data, search, coord, sp])
+  }, [data, search, coord, sp, country])
 
   if (loading) return <div className="text-sm text-gray-400">Loading…</div>
   if (err || !data) return <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600">{err}</div>
@@ -98,6 +100,11 @@ export function CoordinatorClient() {
           className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500">
           <option value="">All Sales Persons</option>
           {data.filters.salesPersons.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={country} onChange={(e) => setCountry(e.target.value)}
+          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-green-500">
+          <option value="">All Countries</option>
+          {data.filters.countries.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <span className="text-xs text-gray-400 ml-auto">{rows.length} buyers · FY {fy.currFY}</span>
       </div>
