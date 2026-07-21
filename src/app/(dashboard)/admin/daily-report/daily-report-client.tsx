@@ -145,11 +145,11 @@ export function DailyReportClient({ loginEmail }: { loginEmail: string }) {
               {label}
             </button>
           ))}
-          <span className="text-[11px] text-gray-400">(preview + PDF ispe filter honge; email full jata hai)</span>
+          <span className="text-[11px] text-gray-400">(applies to preview + PDF; the emailed report is always the full list)</span>
         </div>
 
         <p className="text-xs text-gray-400">
-          Email khaali chhodo to aapki login email ({loginEmail || "—"}) pe jayega. PDF me saare buyers aate hain — kuch missing nahi.
+          Leave the email blank to send to your login email ({loginEmail || "—"}). The PDF includes every buyer — nothing is left out.
         </p>
         {result && (
           <div className={`text-sm rounded-lg px-3 py-2 ${result.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
