@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { formatNumber } from "@/lib/utils"
 
-interface OrderLine { date: string; piNo: string; brand: string; variety: string; qtyMT: number; rate: number }
+interface OrderLine { date: string; piNo: string; brand: string; variety: string; description: string; qtyMT: number; rate: number }
 interface Buyer {
   buyerName: string; country: string
   salesPerson: string; salesPersonEmail: string
@@ -27,7 +27,7 @@ const COLS = [
   { key: "coord",   label: "Coordinator",  w: 130, align: "left"  },
   { key: "sp",      label: "Sales Person", w: 130, align: "left"  },
   { key: "target",  label: "Target",       w: 80,  align: "right" },
-  { key: "ctrs",    label: "Ctrs P/C",     w: 100, align: "right" },
+  { key: "ctrs",    label: "Containers",   w: 120, align: "right" },
 ] as const
 
 export function CoordinatorClient() {
@@ -134,7 +134,10 @@ export function CoordinatorClient() {
                   <td className="px-3 py-2 text-gray-600" style={{ wordBreak: "break-word", whiteSpace: "normal" }}>{b.salesCoordinator || "—"}</td>
                   <td className="px-3 py-2 text-gray-600" style={{ wordBreak: "break-word", whiteSpace: "normal" }}>{b.salesPerson || "—"}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-700">{b.target ? formatNumber(b.target) : "—"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold">{b.containersPrevFY} / {b.containersCurrFY}</td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="tabular-nums font-bold text-slate-900 text-[15px] leading-tight">{b.containersPrevFY} / {b.containersCurrFY}</div>
+                    <div className="text-[10px] text-gray-400 tabular-nums">{formatNumber(b.qtyMTPrevFY)} / {formatNumber(b.qtyMTCurrFY)} MT</div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -180,8 +183,12 @@ function BuyerDetail({ b, fy, onClose }: { b: Buyer; fy: { currFY: string; prevF
       <div className="grid grid-cols-2 gap-2">
         <Stat label={`Orders ${fy.prevFY}`} value={String(b.ordersPrevFY)} />
         <Stat label={`Orders ${fy.currFY}`} value={String(b.ordersCurrFY)} />
-        <Stat label="Containers" value={`${b.containersPrevFY} / ${b.containersCurrFY}`} sub={`${fy.prevFY} / ${fy.currFY}`} />
-        <Stat label="Qty MT" value={`${formatNumber(b.qtyMTPrevFY)} / ${formatNumber(b.qtyMTCurrFY)}`} sub={`${fy.prevFY} / ${fy.currFY}`} />
+        {/* Containers = primary; Qty MT small below */}
+        <div className="bg-slate-50 rounded-lg p-2.5">
+          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Containers · {fy.prevFY}/{fy.currFY}</p>
+          <p className="text-lg font-extrabold text-slate-900 leading-tight">{b.containersPrevFY} / {b.containersCurrFY}</p>
+          <p className="text-[10px] text-gray-400 tabular-nums">Qty: {formatNumber(b.qtyMTPrevFY)} / {formatNumber(b.qtyMTCurrFY)} MT</p>
+        </div>
         <Stat label="FY Target" value={formatNumber(b.target)} sub="containers" />
         <Stat label="Avg Cycle" value={b.avgCycleDays > 0 ? `${b.avgCycleDays} days` : "—"} sub="between orders" />
       </div>
@@ -217,7 +224,7 @@ function BuyerDetail({ b, fy, onClose }: { b: Buyer; fy: { currFY: string; prevF
                   <tr key={i} className={`border-t border-gray-100 ${i % 2 ? "bg-slate-50/50" : ""}`}>
                     <td className="px-2 py-1.5 whitespace-nowrap text-slate-700">{o.date}</td>
                     <td className="px-2 py-1.5 text-slate-700">{o.piNo}</td>
-                    <td className="px-2 py-1.5 text-gray-600">{o.variety || "—"}</td>
+                    <td className="px-2 py-1.5 text-gray-600">{o.description || o.variety || "—"}</td>
                     <td className="px-2 py-1.5 text-gray-600">{o.brand || "—"}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{formatNumber(o.qtyMT)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{formatNumber(o.rate)}</td>

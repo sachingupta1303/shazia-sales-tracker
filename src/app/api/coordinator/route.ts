@@ -19,10 +19,10 @@ import type { AppUser, PIRecord, FinancialYear } from "@/types"
 
 const norm = (s: string) => (s ?? "").toLowerCase().trim()
 
-interface OrderLine { date: string; piNo: string; brand: string; variety: string; qtyMT: number; rate: number }
+interface OrderLine { date: string; piNo: string; brand: string; variety: string; description: string; qtyMT: number; rate: number }
 
 // Collapse a buyer's PI rows into unique orders (one per PI number)
-function uniqueOrders(pis: PIRecord[]): { piNo: string; date: string; containers: number; qtyMT: number; brand: string; variety: string; rate: number; country: string }[] {
+function uniqueOrders(pis: PIRecord[]): { piNo: string; date: string; containers: number; qtyMT: number; brand: string; variety: string; description: string; rate: number; country: string }[] {
   const byPI = new Map<string, PIRecord[]>()
   for (const r of pis) {
     if (!byPI.has(r.piNumber)) byPI.set(r.piNumber, [])
@@ -32,13 +32,14 @@ function uniqueOrders(pis: PIRecord[]): { piNo: string; date: string; containers
     const first = rows[0]
     return {
       piNo,
-      date:       first.piDate,
-      containers: first.totalContainers,             // PI-level (same across product rows)
-      qtyMT:      rows.reduce((s, x) => s + (x.qtyMTs || 0), 0),
-      brand:      rows.find((x) => x.brand)?.brand ?? "",
-      variety:    rows.find((x) => x.varieties)?.varieties ?? "",
-      rate:       rows.find((x) => x.rate)?.rate ?? 0,
-      country:    first.countries,
+      date:        first.piDate,
+      containers:  first.totalContainers,             // PI-level (same across product rows)
+      qtyMT:       rows.reduce((s, x) => s + (x.qtyMTs || 0), 0),
+      brand:       rows.find((x) => x.brand)?.brand ?? "",
+      variety:     rows.find((x) => x.varieties)?.varieties ?? "",
+      description: rows.find((x) => x.description)?.description ?? "",
+      rate:        rows.find((x) => x.rate)?.rate ?? 0,
+      country:     first.countries,
     }
   })
 }
@@ -111,7 +112,7 @@ export async function GET(req: Request) {
 
     const currOrders = uniqueOrders(pis.filter((r) => isInFY(parsePIDate(r.piDate), currFY)))
     const prevOrders = uniqueOrders(pis.filter((r) => isInFY(parsePIDate(r.piDate), prevFY)))
-    const allOrders  = uniqueOrders(pis).sort((a, b) => b.date.localeCompare(a.date))
+    const allOrders  = uniqueOrders(pis).sort((a, b) => parsePIDate(b.date).getTime() - parsePIDate(a.date).getTime())
 
     const sum = (arr: { containers?: number; qtyMT?: number }[], f: "containers" | "qtyMT") =>
       arr.reduce((s, o) => s + (o[f] || 0), 0)
@@ -120,7 +121,7 @@ export async function GET(req: Request) {
     const varieties = [...new Set(pis.map((r) => r.varieties).filter(Boolean))]
 
     const last5: OrderLine[] = allOrders.slice(0, 5).map((o) => ({
-      date: o.date, piNo: o.piNo, brand: o.brand, variety: o.variety, qtyMT: Math.round(o.qtyMT), rate: Math.round(o.rate),
+      date: o.date, piNo: o.piNo, brand: o.brand, variety: o.variety, description: o.description, qtyMT: Math.round(o.qtyMT), rate: Math.round(o.rate),
     }))
 
     return {
