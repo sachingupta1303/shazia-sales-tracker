@@ -193,6 +193,11 @@ async function generatePDF(data: MonthlyReportData) {
   const BLUE2: [number,number,number] = [30,  64,  175]   // blue-800
   const SKY:   [number,number,number] = [14,  165, 233]   // sky-500
 
+  // Growth helpers — shared across tables (null = NEW, undefined = no baseline)
+  const hasPrev = !!data.comparison?.hasPrevious
+  const gTxt = (p?: number | null) =>
+    p === null ? "NEW" : (p === undefined ? "—" : `${p > 0 ? "+" : ""}${p.toFixed(1)}%`)
+
   // ── Watermark ──────────────────────────────────────────────────────────────
   function drawWatermark() {
     doc.setFont("helvetica", "bold")
@@ -425,8 +430,6 @@ async function generatePDF(data: MonthlyReportData) {
   // ── Growth vs Previous Period ────────────────────────────────────────────────
   if (data.comparison?.hasPrevious) {
     const g = data.comparison.growth
-    const gTxt = (p?: number | null) =>
-      p === null || p === undefined ? "NEW" : `${p > 0 ? "+" : ""}${p.toFixed(1)}%`
     if (y > 240) newPage()
     section(`Growth vs Previous Period (${data.comparison.prevLabel})`)
     tbl(
@@ -484,7 +487,7 @@ async function generatePDF(data: MonthlyReportData) {
 
   // ── Country Performance ────────────────────────────────────────────────────
   if (y > 220) newPage()
-  section("Country Performance")
+  section("Country Performance" + (hasPrev ? `  ·  Growth vs ${data.comparison!.prevLabel}` : ""))
   {
     const ctTgt = data.countryBreakdown.reduce((s,c)=>s+c.monthlyTarget,0)
     const ctAct = data.countryBreakdown.reduce((s,c)=>s+c.containers,0)
@@ -492,22 +495,21 @@ async function generatePDF(data: MonthlyReportData) {
     const ctAmt = data.countryBreakdown.reduce((s,c)=>s+c.amount,0)
     const ctBuy = data.countryBreakdown.reduce((s,c)=>s+c.buyerCount,0)
     const ctAch = ctTgt > 0 ? parseFloat(((ctAct/ctTgt)*100).toFixed(1)) : 0
-    tbl(
-      [["Country","Target (Ctrs)","Actual (Ctrs)","Achievement %","MTs","Revenue","Share %","Buyers"]],
-      data.countryBreakdown.map((c, i) => [
-        `${i+1}. ${c.country}`,
-        c.monthlyTarget > 0 ? fmt(c.monthlyTarget,1) : "—",
-        fmt(c.containers,1),
-        c.monthlyTarget > 0 ? `${c.achievementPct}%` : "—",
-        fmt(c.mts,1),
-        fmtUSD(c.amount),
-        `${c.pct}%`,
-        String(c.buyerCount),
-      ]) as any,
-      { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"}, 7:{halign:"right"} },
-      undefined, undefined,
-      [["GRAND TOTAL", fmt(ctTgt,1), fmt(ctAct,1), ctTgt>0?`${ctAch}%`:"—", fmt(ctMts,1), fmtUSD(ctAmt), "100%", String(ctBuy)]],
-    )
+    const head = hasPrev
+      ? [["Country","Target","Actual","Growth","Achv %","MTs","Revenue","Share","Buyers"]]
+      : [["Country","Target (Ctrs)","Actual (Ctrs)","Achievement %","MTs","Revenue","Share %","Buyers"]]
+    const body = data.countryBreakdown.map((c, i) => {
+      const pre  = [`${i+1}. ${c.country}`, c.monthlyTarget > 0 ? fmt(c.monthlyTarget,1) : "—", fmt(c.containers,1)]
+      const post = [c.monthlyTarget > 0 ? `${c.achievementPct}%` : "—", fmt(c.mts,1), fmtUSD(c.amount), `${c.pct}%`, String(c.buyerCount)]
+      return hasPrev ? [...pre, gTxt(c.growthPct), ...post] : [...pre, ...post]
+    })
+    const colStyles: Record<number, object> = hasPrev
+      ? { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"center"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"}, 7:{halign:"right"}, 8:{halign:"right"} }
+      : { 1:{halign:"right"}, 2:{halign:"right"}, 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"}, 7:{halign:"right"} }
+    const foot = hasPrev
+      ? [["GRAND TOTAL", fmt(ctTgt,1), fmt(ctAct,1), gTxt(data.comparison!.growth.containersPct), ctTgt>0?`${ctAch}%`:"—", fmt(ctMts,1), fmtUSD(ctAmt), "100%", String(ctBuy)]]
+      : [["GRAND TOTAL", fmt(ctTgt,1), fmt(ctAct,1), ctTgt>0?`${ctAch}%`:"—", fmt(ctMts,1), fmtUSD(ctAmt), "100%", String(ctBuy)]]
+    tbl(head, body as any, colStyles, undefined, undefined, foot as any)
   }
 
   // ── Sales Person — Bar Chart + Table ──────────────────────────────────────
@@ -539,25 +541,27 @@ async function generatePDF(data: MonthlyReportData) {
 
   // ── Buyers — Target vs Actual ──────────────────────────────────────────────
   if (y > 220) newPage()
-  section("Buyers — Target vs Actual")
+  section("Buyers — Target vs Actual" + (hasPrev ? "  ·  with Growth" : ""))
   {
     const bTgt = data.buyerBreakdown.reduce((s,b)=>s+b.monthlyTarget,0)
     const bAct = data.buyerBreakdown.reduce((s,b)=>s+b.containers,0)
     const bAmt = data.buyerBreakdown.reduce((s,b)=>s+b.amount,0)
     const bAch = bTgt > 0 ? parseFloat(((bAct/bTgt)*100).toFixed(1)) : 0
-    tbl(
-      [["Buyer","Country","Tier","Target/Mo","Actual Ctrs","Achievement %","Revenue"]],
-      data.buyerBreakdown.map(b => [
-        b.buyerName, b.country, b.tier,
-        b.monthlyTarget > 0 ? fmt(b.monthlyTarget,1) : "—",
-        fmt(b.containers,1),
-        b.monthlyTarget > 0 ? `${b.achievementPct}%` : "—",
-        fmtUSD(b.amount),
-      ]) as any,
-      { 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"} },
-      undefined, undefined,
-      [["GRAND TOTAL", "", "", fmt(bTgt,1), fmt(bAct,1), bTgt>0?`${bAch}%`:"—", fmtUSD(bAmt)]],
-    )
+    const head = hasPrev
+      ? [["Buyer","Country","Tier","Target/Mo","Actual Ctrs","Growth","Achv %","Revenue"]]
+      : [["Buyer","Country","Tier","Target/Mo","Actual Ctrs","Achievement %","Revenue"]]
+    const body = data.buyerBreakdown.map(b => {
+      const pre  = [b.buyerName, b.country, b.tier, b.monthlyTarget > 0 ? fmt(b.monthlyTarget,1) : "—", fmt(b.containers,1)]
+      const post = [b.monthlyTarget > 0 ? `${b.achievementPct}%` : "—", fmtUSD(b.amount)]
+      return hasPrev ? [...pre, gTxt(b.growthPct), ...post] : [...pre, ...post]
+    })
+    const colStyles: Record<number, object> = hasPrev
+      ? { 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"center"}, 6:{halign:"right"}, 7:{halign:"right"} }
+      : { 3:{halign:"right"}, 4:{halign:"right"}, 5:{halign:"right"}, 6:{halign:"right"} }
+    const foot = hasPrev
+      ? [["GRAND TOTAL", "", "", fmt(bTgt,1), fmt(bAct,1), gTxt(data.comparison!.growth.containersPct), bTgt>0?`${bAch}%`:"—", fmtUSD(bAmt)]]
+      : [["GRAND TOTAL", "", "", fmt(bTgt,1), fmt(bAct,1), bTgt>0?`${bAch}%`:"—", fmtUSD(bAmt)]]
+    tbl(head, body as any, colStyles, undefined, undefined, foot as any)
   }
 
   // ── Meetings ───────────────────────────────────────────────────────────────
