@@ -12,7 +12,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import {
   getPIRecords, get8020Buyers, getMeetingSchedules, filterPIByFY, sumContainers,
-  getTargetRecords, getCountryTargets,
+  sumContainersBy, getTargetRecords, getCountryTargets,
 } from "@/lib/data"
 import { getCurrentFY, parsePIDate, getFYWeek, getFYBoundaries } from "@/lib/fy-utils"
 import type { FinancialYear } from "@/types"
@@ -45,6 +45,36 @@ const FY_MONTH_NAMES = [
 const FY_MONTH_SHORT = [
   "", "Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar",
 ]
+
+// Calendar-month short names (0-indexed: Jan=0 … Dec=11)
+const CAL_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+/** FY month number (1=Apr … 12=Mar) for a calendar date */
+function fyMonthOfDate(d: Date): number {
+  if (isNaN(d.getTime())) return 0
+  return ((d.getMonth() - 3 + 12) % 12) + 1
+}
+
+/** Human label for a set of calendar {month,year} combos (previous-period label) */
+function calMonthsLabel(cals: { month: number; year: number }[]): string {
+  if (!cals.length) return "—"
+  const sorted = [...cals].sort((a, b) => (a.year - b.year) || (a.month - b.month))
+  const first = sorted[0], last = sorted[sorted.length - 1]
+  if (sorted.length === 1) return `${CAL_SHORT[first.month]} ${first.year}`
+  const yr = first.year === last.year ? String(first.year) : `${first.year}–${last.year}`
+  return `${CAL_SHORT[first.month]}–${CAL_SHORT[last.month]} ${yr}`
+}
+
+/**
+ * Growth % of current vs previous.
+ *   prev > 0            → signed percentage change
+ *   prev = 0, cur > 0   → null  (NEW — no baseline to compare against)
+ *   prev = 0, cur = 0   → 0
+ */
+function pctGrowth(cur: number, prev: number): number | null {
+  if (prev > 0) return parseFloat((((cur - prev) / prev) * 100).toFixed(1))
+  return cur > 0 ? null : 0
+}
 
 /** Build a human-readable period label for the selected months */
 function buildPeriodLabel(months: number[], fy: string): { label: string; shortLabel: string } {
@@ -136,6 +166,57 @@ export async function GET(req: Request) {
   // Fraction of the year covered by the selected period (weeks ÷ 52 or months ÷ 12).
   // All targets are the annual target × this fraction.
   const periodFraction = weekMode ? selectedWeeks.length / 52 : selectedMonths.length / 12
+
+  // ── Previous comparable period ─────────────────────────────────────────────
+  // Shift the selected calendar window back by its own length, so a single month
+  // compares to the month before it, a quarter to the quarter before it, etc.
+  // (May cross the FY boundary — e.g. April vs previous March — so we scan ALL
+  //  PI records by calendar month/year, not just the current FY.) Growth is only
+  //  computed in month mode; week mode has no baseline here.
+  const periodLen = selectedMonths.length
+  const prevCalMonths = weekMode ? [] : calendarMonths.map(({ month, year }) => {
+    const idx = year * 12 + month - periodLen
+    return { month: ((idx % 12) + 12) % 12, year: Math.floor(idx / 12) }
+  })
+  const hasPrevious = !weekMode && prevCalMonths.length > 0
+  const prevCalSet  = new Set(prevCalMonths.map(({ month, year }) => `${year}-${month}`))
+  const prevPI = hasPrevious
+    ? allPI.filter((r) => {
+        const d = parsePIDate(r.piDate)
+        if (isNaN(d.getTime())) return false
+        return prevCalSet.has(`${d.getFullYear()}-${d.getMonth()}`)
+      })
+    : []
+
+  const nrm = (s: string) => (s ?? "").toLowerCase().trim()
+  const prevTotalContainers = sumContainers(prevPI)
+  const prevTotalMTs        = prevPI.reduce((s, r) => s + r.qtyMTs, 0)
+  const prevTotalAmount     = prevPI.reduce((s, r) => s + r.totalAmount, 0)
+  const prevCountryCtr = sumContainersBy(prevPI, (r) => (r.countries?.toUpperCase().trim() || "UNKNOWN"))
+  const prevBuyerCtr   = sumContainersBy(prevPI, (r) => nrm(r.buyerCompanyName))
+
+  // ── Monthly container trend (whole FY, for the line chart) ─────────────────
+  const trendCtr = sumContainersBy(fyPI, (r) =>
+    r.fyMonthNo > 0 ? r.fyMonthNo : fyMonthOfDate(parsePIDate(r.piDate)))
+  const trendMts = new Map<number, number>()
+  const trendAmt = new Map<number, number>()
+  for (const r of fyPI) {
+    const fm = r.fyMonthNo > 0 ? r.fyMonthNo : fyMonthOfDate(parsePIDate(r.piDate))
+    if (fm < 1 || fm > 12) continue
+    trendMts.set(fm, (trendMts.get(fm) ?? 0) + r.qtyMTs)
+    trendAmt.set(fm, (trendAmt.get(fm) ?? 0) + r.totalAmount)
+  }
+  const monthlyTrend = Array.from({ length: 12 }, (_, i) => {
+    const fm = i + 1
+    return {
+      fyMonthNo:  fm,
+      month:      FY_MONTH_SHORT[fm],
+      containers: parseFloat((trendCtr.get(fm) ?? 0).toFixed(2)),
+      mts:        parseFloat((trendMts.get(fm) ?? 0).toFixed(2)),
+      amount:     parseFloat((trendAmt.get(fm) ?? 0).toFixed(2)),
+      selected:   selectedMonths.includes(fm),
+    }
+  })
 
   // ── 80/20 buyer lookup ─────────────────────────────────────────────────────
   const buyerMap            = new Map(buyers8020.map((b) => [norm(b.buyerName), b]))
@@ -233,6 +314,7 @@ export async function GET(req: Request) {
   const countryBreakdown = [...countryMap.entries()]
     .map(([country, data]) => {
       const target = countryTargetMap.get(country) ?? 0
+      const prevC  = prevCountryCtr.get(country) ?? 0
       return {
         country,
         containers:     parseFloat(data.containers.toFixed(2)),
@@ -244,6 +326,8 @@ export async function GET(req: Request) {
         monthlyTarget:  parseFloat(target.toFixed(2)),
         achievementPct: target > 0
           ? parseFloat(((data.containers / target) * 100).toFixed(1)) : 0,
+        prevContainers: hasPrevious ? parseFloat(prevC.toFixed(2)) : undefined,
+        growthPct:      hasPrevious ? pctGrowth(data.containers, prevC) : undefined,
       }
     })
     .sort((a, b) => b.containers - a.containers)
@@ -294,6 +378,7 @@ export async function GET(req: Request) {
     .map(([key, data]) => {
       const b80    = buyerMap.get(key)
       const target = (annualTargetByBuyer.get(key) ?? 0) * periodFraction
+      const prevB  = prevBuyerCtr.get(key) ?? 0
       return {
         buyerName:         key.replace(/\b\w/g, (c) => c.toUpperCase()),
         country:           data.country,
@@ -306,6 +391,8 @@ export async function GET(req: Request) {
         achievementPct:    target > 0
           ? parseFloat(((data.containers / target) * 100).toFixed(1)) : 0,
         isIn8020:          !!b80 && b80.tier !== "OTHERS",
+        prevContainers:    hasPrevious ? parseFloat(prevB.toFixed(2)) : undefined,
+        growthPct:         hasPrevious ? pctGrowth(data.containers, prevB) : undefined,
       }
     })
     .sort((a, b) => b.containers - a.containers)
@@ -406,6 +493,25 @@ export async function GET(req: Request) {
       activeCountries,
       activeSalesPersons: activeSP,
     },
+
+    // Growth vs the previous comparable period (month→prev month, quarter→prev quarter)
+    comparison: {
+      hasPrevious,
+      prevLabel: calMonthsLabel(prevCalMonths),
+      prev: {
+        containers: parseFloat(prevTotalContainers.toFixed(2)),
+        mts:        parseFloat(prevTotalMTs.toFixed(2)),
+        amount:     parseFloat(prevTotalAmount.toFixed(2)),
+      },
+      growth: {
+        containersPct: hasPrevious ? pctGrowth(totalContainers, prevTotalContainers) : undefined,
+        mtsPct:        hasPrevious ? pctGrowth(totalMTs, prevTotalMTs) : undefined,
+        amountPct:     hasPrevious ? pctGrowth(totalAmount, prevTotalAmount) : undefined,
+      },
+    },
+
+    // Month-by-month container trend for the whole FY (line chart)
+    monthlyTrend,
 
     varietyBreakdown,
     countryBreakdown,

@@ -4,19 +4,24 @@ import { useState, useEffect, useCallback } from "react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell, ResponsiveContainer,
+  ComposedChart, Line, LabelList,
 } from "recharts"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface DescriptionRow  { description: string; containers: number; mts: number; amount: number }
 interface VarietyRow      { variety: string; containers: number; mts: number; amount: number; containersPct: number; descriptions: DescriptionRow[] }
-interface CountryRow      { country: string; containers: number; mts: number; amount: number; buyerCount: number; pct: number; monthlyTarget: number; achievementPct: number }
+interface CountryRow      { country: string; containers: number; mts: number; amount: number; buyerCount: number; pct: number; monthlyTarget: number; achievementPct: number; prevContainers?: number; growthPct?: number | null }
 interface SPRow           { salesPerson: string; containers: number; mts: number; amount: number; share: number; buyerCount: number }
-interface BuyerRow        { buyerName: string; country: string; tier: string; responsiblePerson: string; containers: number; mts: number; amount: number; monthlyTarget: number; achievementPct: number; isIn8020: boolean }
+interface BuyerRow        { buyerName: string; country: string; tier: string; responsiblePerson: string; containers: number; mts: number; amount: number; monthlyTarget: number; achievementPct: number; isIn8020: boolean; prevContainers?: number; growthPct?: number | null }
 interface TierStat        { done: number; total: number; scheduled?: number; pending?: number }
+interface TrendRow        { fyMonthNo: number; month: string; containers: number; mts: number; amount: number; selected: boolean }
+interface Comparison      { hasPrevious: boolean; prevLabel: string; prev: { containers: number; mts: number; amount: number }; growth: { containersPct?: number | null; mtsPct?: number | null; amountPct?: number | null } }
 
 interface MonthlyReportData {
   fy: string; fyMonthNo: number; selectedMonths: number[]; monthName: string; calendarMonthYear: string; generatedAt: string
   summary: { totalContainers: number; totalMTs: number; totalAmount: number; totalMonthlyTarget: number; achievementPct: number; uniqueBuyers: number; piCount: number; activeCountries: number; activeSalesPersons: number }
+  comparison?:           Comparison
+  monthlyTrend?:         TrendRow[]
   varietyBreakdown:      VarietyRow[]
   countryBreakdown:      CountryRow[]
   salesPersonBreakdown:  SPRow[]
@@ -102,6 +107,25 @@ function Sparkline({ pct }: { pct: number }) {
       <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
       <circle cx={pct>=80?50:pct>=45?50:50} cy={pct>=80?2:pct>=45?12:22} r="2.5" fill={color}/>
     </svg>
+  )
+}
+
+// ── Growth Badge ──────────────────────────────────────────────────────────────
+// pct === null  → "NEW" (no baseline last period)
+// pct === undefined → nothing (no comparison available, e.g. week mode)
+function GrowthBadge({ pct, size="sm" }: { pct: number | null | undefined; size?: "sm" | "lg" }) {
+  if (pct === undefined) return null
+  const pad = size === "lg" ? "text-xs px-2 py-1" : "text-[10px] px-1.5 py-0.5"
+  if (pct === null)
+    return <span className={`inline-flex items-center gap-0.5 font-bold rounded ${pad} bg-blue-50 text-blue-600`}>★ NEW</span>
+  const up = pct > 0, flat = pct === 0
+  const cls  = flat ? "bg-gray-100 text-gray-500" : up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
+  const icon = flat ? "→" : up ? "▲" : "▼"
+  const sign = up ? "+" : ""
+  return (
+    <span className={`inline-flex items-center gap-0.5 font-bold rounded ${pad} ${cls}`}>
+      {icon} {sign}{pct.toFixed(1)}%
+    </span>
   )
 }
 
@@ -288,33 +312,40 @@ async function generatePDF(data: MonthlyReportData) {
 
   // ── Horizontal bar chart ───────────────────────────────────────────────────
   function barChart(
-    items: Array<{ label: string; value: number; sub?: string }>,
+    items: Array<{ label: string; value: number; sub?: string; hi?: boolean }>,
     rgb: [number, number, number] = [5, 150, 105],
   ) {
     if (!items.length) return
     const bX = ML + 52, bW = W - MR - bX - 24
     const rH = 6.5, gap = 3.5
     const maxV = Math.max(...items.map(d => d.value), 0.01)
+    // Muted tint of the base colour for non-highlighted bars
+    const light: [number,number,number] = [
+      Math.round(rgb[0] + (255 - rgb[0]) * 0.62),
+      Math.round(rgb[1] + (255 - rgb[1]) * 0.62),
+      Math.round(rgb[2] + (255 - rgb[2]) * 0.62),
+    ]
+    const anyHi = items.some(d => d.hi)
     items.forEach((d, i) => {
       const ry = y + i * (rH + gap)
       doc.setFontSize(7)
-      doc.setFont("helvetica", "normal")
-      doc.setTextColor(55, 65, 81)
+      doc.setFont("helvetica", d.hi ? "bold" : "normal")
+      doc.setTextColor(...(d.hi ? NAVY : [55, 65, 81] as [number,number,number]))
       const lbl = d.label.length > 16 ? d.label.slice(0, 15) + "…" : d.label
       doc.text(lbl, bX - 3, ry + rH * 0.72, { align: "right" })
       // track
       doc.setFillColor(241, 245, 249)
       doc.roundedRect(bX, ry, bW, rH, 1.5, 1.5, "F")
-      // fill
+      // fill — full colour for the highlighted (selected) bar, muted tint otherwise
       const fw = Math.max((d.value / maxV) * bW, d.value > 0 ? 2 : 0)
       if (fw > 0) {
-        doc.setFillColor(...rgb)
+        doc.setFillColor(...((anyHi && !d.hi) ? light : rgb))
         doc.roundedRect(bX, ry, fw, rH, 1.5, 1.5, "F")
       }
       // value label
       doc.setFontSize(6.5)
       doc.setFont("helvetica", "bold")
-      doc.setTextColor(55, 65, 81)
+      doc.setTextColor(...(d.hi ? NAVY : [55, 65, 81] as [number,number,number]))
       doc.text(`${fmt(d.value, 1)}${d.sub ?? ""}`, bX + fw + 2.5, ry + rH * 0.72)
     })
     y += items.length * (rH + gap) + 5
@@ -391,7 +422,36 @@ async function generatePDF(data: MonthlyReportData) {
   )
   y += 12
 
+  // ── Growth vs Previous Period ────────────────────────────────────────────────
+  if (data.comparison?.hasPrevious) {
+    const g = data.comparison.growth
+    const gTxt = (p?: number | null) =>
+      p === null || p === undefined ? "NEW" : `${p > 0 ? "+" : ""}${p.toFixed(1)}%`
+    if (y > 240) newPage()
+    section(`Growth vs Previous Period (${data.comparison.prevLabel})`)
+    tbl(
+      [["Metric", "Previous", "Current", "Growth"]],
+      [
+        ["Containers", fmt(data.comparison.prev.containers, 1), fmt(s.totalContainers, 1), gTxt(g.containersPct)],
+        ["MTs",        fmt(data.comparison.prev.mts, 1),        fmt(s.totalMTs, 1),        gTxt(g.mtsPct)],
+        ["Revenue",    fmtUSD(data.comparison.prev.amount),      fmtUSD(s.totalAmount),     gTxt(g.amountPct)],
+      ] as any,
+      { 0: { fontStyle: "bold" }, 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+    )
+  }
+
+  // ── Monthly Container Trend ──────────────────────────────────────────────────
+  if (data.monthlyTrend?.length) {
+    if (y > 200) newPage()
+    section(`Monthly Container Trend — FY ${data.fy}  (bold = report period)`)
+    barChart(
+      data.monthlyTrend.map(m => ({ label: m.month, value: m.containers, sub: " ctrs", hi: m.selected })),
+      BLUE,
+    )
+  }
+
   // ── Variety Breakdown ──────────────────────────────────────────────────────
+  if (y > 220) newPage()
   section("Variety Breakdown")
   {
     const totalM = data.varietyBreakdown.reduce((s,v)=>s+v.mts,0)
@@ -683,6 +743,7 @@ export function ReportClient({ userRole }: { userRole: string }) {
   const [pdfBusy,       setPdfBusy]   = useState(false)
   const [error,         setError]     = useState<string|null>(null)
   const [openDesc,      setOpenDesc]  = useState<string|null>(null)
+  const [trendMetric,   setTrendMetric] = useState<"containers"|"mts"|"amount">("containers")
 
   const fetchReport = useCallback(async (f: string, months: number[], wk: number) => {
     if (!months.length) return
@@ -755,26 +816,133 @@ export function ReportClient({ userRole }: { userRole: string }) {
       {!loading && data && (
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
+          {/* ═ Monthly Growth — Bar + Line hero chart (top) ═════════════════ */}
+          {data.monthlyTrend && data.monthlyTrend.length > 0 && (() => {
+            const trend = data.monthlyTrend!
+            const metricCfg = {
+              containers: { key:"containers", label:"Containers", color:C.emerald, light:"#a7f3d0", fmt:(v:number)=>fmt(v,1) },
+              mts:        { key:"mts",        label:"MTs",        color:C.blue,    light:"#bfdbfe", fmt:(v:number)=>fmt(v,1) },
+              amount:     { key:"amount",     label:"Revenue",    color:C.purple,  light:"#ddd6fe", fmt:(v:number)=>fmtUSD(v) },
+            }[trendMetric]
+            const mkey = metricCfg.key as "containers"|"mts"|"amount"
+            // Attach month-on-month growth % to each month (null when no prior baseline)
+            const trendG = trend.map((t,i)=>{
+              const prev = i>0 ? (trend[i-1] as any)[mkey] : 0
+              const cur  = (t as any)[mkey]
+              const mom  = prev>0 ? ((cur-prev)/prev)*100 : null
+              return { ...t, mom }
+            })
+            const total = trend.reduce((s,t)=>s+(t as any)[mkey],0)
+            const best  = trend.reduce((a,b)=>((b as any)[mkey]>(a as any)[mkey]?b:a), trend[0])
+            const selLabels = new Set(trend.filter(t=>t.selected).map(t=>t.month))
+
+            // Selected month → bold X-axis label
+            const MonthTick = ({x,y,payload}:any)=>{
+              const sel = selLabels.has(payload.value)
+              return <text x={x} y={y+14} textAnchor="middle" fontSize={sel?12:11}
+                fontWeight={sel?800:400} fill={sel?C.slate:"#94a3b8"}>{payload.value}</text>
+            }
+            // Growth % label above each bar
+            const GrowthLabel = (props:any)=>{
+              const { x, y, width, index } = props
+              const g = trendG[index]?.mom
+              if (g===null || g===undefined) return null
+              const up = g>=0
+              return <text x={x+width/2} y={y-6} textAnchor="middle" fontSize={9}
+                fontWeight="bold" fill={up?C.emerald:C.red}>{up?"+":""}{g.toFixed(0)}%</text>
+            }
+            const GrowthTip = ({active,label}:any)=>{
+              if(!active) return null
+              const row = trendG.find(t=>t.month===label)
+              if(!row) return null
+              return (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-xs">
+                  <p className="font-semibold text-slate-800 mb-1">{label} {data.fy}{row.selected?"  · report period":""}</p>
+                  <p style={{color:metricCfg.color}}>{metricCfg.label}: <strong>{metricCfg.fmt((row as any)[mkey])}</strong></p>
+                  {row.mom!==null && row.mom!==undefined && (
+                    <p className={row.mom>=0?"text-emerald-600 font-semibold":"text-red-600 font-semibold"}>
+                      {row.mom>=0?"▲ +":"▼ "}{row.mom.toFixed(1)}% vs prev month
+                    </p>
+                  )}
+                </div>
+              )
+            }
+            return (
+            <Section
+              title="📊 Monthly Growth — Qty Trend"
+              sub={`Bars = monthly ${metricCfg.label.toLowerCase()} across FY ${data.fy} · bold bar = selected report period · line + % show month-on-month growth`}>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex gap-1.5">
+                  {(["containers","mts","amount"] as const).map(m=>(
+                    <button key={m} onClick={()=>setTrendMetric(m)}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${trendMetric===m?"bg-slate-900 text-white":"bg-gray-100 text-slate-600 hover:bg-gray-200"}`}>
+                      {m==="containers"?"Containers":m==="mts"?"MTs":"Revenue"}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-4 text-xs">
+                  <span className="text-gray-400">FY total: <span className="font-bold text-slate-700">{metricCfg.fmt(total)}</span></span>
+                  <span className="text-gray-400">Best month: <span className="font-bold text-emerald-700">{best.month} ({metricCfg.fmt((best as any)[mkey])})</span></span>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={320}>
+                <ComposedChart data={trendG} margin={{left:0,right:16,top:24,bottom:4}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false}/>
+                  <XAxis dataKey="month" tick={<MonthTick/>} axisLine={{stroke:"#e5e7eb"}} tickLine={false} interval={0} height={30}/>
+                  <YAxis tick={{fontSize:11,fill:"#6b7280"}} axisLine={false} tickLine={false}
+                    tickFormatter={(v:number)=>trendMetric==="amount"?fmtUSD(v):fmt(v)} width={trendMetric==="amount"?56:44}/>
+                  <Tooltip content={<GrowthTip/>} cursor={{fill:"#f8fafc"}}/>
+                  <Bar dataKey={mkey} name={metricCfg.label} radius={[6,6,0,0]} maxBarSize={48}>
+                    {trendG.map((t,i)=>(
+                      <Cell key={i}
+                        fill={t.selected?metricCfg.color:metricCfg.light}
+                        stroke={t.selected?metricCfg.color:"transparent"} strokeWidth={t.selected?1.5:0}/>
+                    ))}
+                    <LabelList content={GrowthLabel}/>
+                  </Bar>
+                  <Line type="monotone" dataKey={mkey} name="Trend" stroke={C.slate} strokeWidth={2}
+                    dot={(props:any)=>{
+                      const { cx, cy, payload, index } = props
+                      const sel = payload.selected
+                      return <circle key={index} cx={cx} cy={cy} r={sel?5:3}
+                        fill={sel?C.slate:"#fff"} stroke={C.slate} strokeWidth={2}/>
+                    }}
+                    activeDot={{r:6}}/>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </Section>
+            )
+          })()}
+
           {/* ═ KPI Cards ═══════════════════════════════════════════════════ */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {[
-              { label:"Containers",    value:fmt(data.summary.totalContainers,1),     sub:`Target: ${fmt(data.summary.totalMonthlyTarget,1)}`, pct:data.summary.achievementPct },
-              { label:"Achievement",   value:`${data.summary.achievementPct}%`,        sub:"vs Monthly Target",                                  pct:data.summary.achievementPct },
-              { label:"Total MTs",     value:fmt(data.summary.totalMTs,1),             sub:"Metric Tonnes",                                      pct:75 },
-              { label:"Revenue",       value:fmtUSD(data.summary.totalAmount),         sub:`${data.summary.piCount} orders`,                    pct:75 },
-              { label:"Markets · Buyers", value:`${data.summary.activeCountries} · ${data.summary.uniqueBuyers}`, sub:`${data.summary.activeSalesPersons} Sales Persons`, pct:75 },
-            ].map(card=>(
+            {([
+              { label:"Containers",    value:fmt(data.summary.totalContainers,1),     sub:`Target: ${fmt(data.summary.totalMonthlyTarget,1)}`, pct:data.summary.achievementPct, growth:data.comparison?.growth.containersPct },
+              { label:"Achievement",   value:`${data.summary.achievementPct}%`,        sub:"vs Monthly Target",                                  pct:data.summary.achievementPct, growth:undefined },
+              { label:"Total MTs",     value:fmt(data.summary.totalMTs,1),             sub:"Metric Tonnes",                                      pct:75, growth:data.comparison?.growth.mtsPct },
+              { label:"Revenue",       value:fmtUSD(data.summary.totalAmount),         sub:`${data.summary.piCount} orders`,                    pct:75, growth:data.comparison?.growth.amountPct },
+              { label:"Markets · Buyers", value:`${data.summary.activeCountries} · ${data.summary.uniqueBuyers}`, sub:`${data.summary.activeSalesPersons} Sales Persons`, pct:75, growth:undefined },
+            ] as Array<{label:string;value:string;sub:string;pct:number;growth:number|null|undefined}>).map(card=>{
+              const showGrowth = data.comparison?.hasPrevious && card.growth !== undefined
+              return (
               <div key={card.label}
                 className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col gap-2">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{card.label}</p>
                 <p className="text-[22px] font-bold text-slate-900 leading-none">{card.value}</p>
                 <div className="flex items-end justify-between">
                   <p className="text-[11px] text-gray-400">{card.sub}</p>
-                  <Sparkline pct={card.pct}/>
+                  {showGrowth ? <GrowthBadge pct={card.growth}/> : <Sparkline pct={card.pct}/>}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
+          {data.comparison?.hasPrevious && (
+            <p className="-mt-2 text-[11px] text-gray-400 px-1">
+              ▲▼ Growth compared to previous period · <span className="font-semibold text-slate-500">{data.comparison.prevLabel}</span>
+              {" "}({fmt(data.comparison.prev.containers,1)} containers)
+            </p>
+          )}
 
           {/* Achievement bar */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
@@ -931,8 +1099,8 @@ export function ReportClient({ userRole }: { userRole: string }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-900 text-white">
-                      {["#","Country","Target (Ctrs)","Actual (Ctrs)","Achievement","MTs","Revenue","Share","Buyers"].map(h=>(
-                        <th key={h} className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide ${h==="#"||h==="Buyers"?"text-center":"text-left"} ${h==="Actual (Ctrs)"||h==="MTs"||h==="Revenue"||h==="Share"||h==="Target (Ctrs)"?"text-right":""}`}>{h}</th>
+                      {["#","Country","Target (Ctrs)","Actual (Ctrs)",...(data.comparison?.hasPrevious?["Growth"]:[]),"Achievement","MTs","Revenue","Share","Buyers"].map(h=>(
+                        <th key={h} className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide ${h==="#"||h==="Buyers"||h==="Growth"?"text-center":"text-left"} ${h==="Actual (Ctrs)"||h==="MTs"||h==="Revenue"||h==="Share"||h==="Target (Ctrs)"?"text-right":""}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -945,6 +1113,9 @@ export function ReportClient({ userRole }: { userRole: string }) {
                           {c.monthlyTarget>0?fmt(c.monthlyTarget,1):"—"}
                         </td>
                         <td className="px-3 py-2.5 text-right font-bold text-slate-900">{fmt(c.containers,1)}</td>
+                        {data.comparison?.hasPrevious && (
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap"><GrowthBadge pct={c.growthPct}/></td>
+                        )}
                         <td className="px-3 py-2.5 min-w-[110px]">
                           {c.monthlyTarget>0
                             ? <AchBar pct={c.achievementPct}/>
@@ -1001,9 +1172,9 @@ export function ReportClient({ userRole }: { userRole: string }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-900 text-white">
-                      {["#","Buyer","Country","Tier","Responsible","Target/Mo","Actual Ctrs","Achievement","Revenue"].map(h=>(
+                      {["#","Buyer","Country","Tier","Responsible","Target/Mo","Actual Ctrs",...(data.comparison?.hasPrevious?["Growth"]:[]),"Achievement","Revenue"].map(h=>(
                         <th key={h} className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide
-                          ${h==="Target/Mo"||h==="Actual Ctrs"||h==="Revenue"?"text-right":"text-left"}`}>{h}</th>
+                          ${h==="Growth"?"text-center":h==="Target/Mo"||h==="Actual Ctrs"||h==="Revenue"?"text-right":"text-left"}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1023,6 +1194,9 @@ export function ReportClient({ userRole }: { userRole: string }) {
                           {b.monthlyTarget>0?fmt(b.monthlyTarget,1):"—"}
                         </td>
                         <td className="px-3 py-2.5 text-right font-bold text-slate-900">{fmt(b.containers,1)}</td>
+                        {data.comparison?.hasPrevious && (
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap"><GrowthBadge pct={b.growthPct}/></td>
+                        )}
                         <td className="px-3 py-2.5 min-w-[120px]">
                           {b.monthlyTarget>0
                             ? <AchBar pct={b.achievementPct}/>
