@@ -349,22 +349,27 @@ function SPTable({
 }
 
 // ── New Business View ───────────────────────────────────────────────────────────
-//   New buyers & countries = those with NO business last year but actual > 0 now.
-//   Reuses the Buyer/Country tables (their "Prev Year" column shows 0, making the
-//   "brand-new" nature obvious).
+//   New buyers & countries = business this year, NONE last year, NO target set.
+//   No target/achievement columns here (new business has no target) — instead we
+//   show Last Year (0) vs This Year to make the "brand-new" nature obvious.
 function NewBusinessView({
-  newBuyerRows, newCountryRows, week, showSP,
+  newBuyerRows, newCountryRows, showSP,
 }: {
-  newBuyerRows: BuyerPerformance[]; newCountryRows: CountryPerformance[]; week: number; showSP: boolean
+  newBuyerRows: BuyerPerformance[]; newCountryRows: CountryPerformance[]; showSP: boolean
 }) {
+  const router = useRouter()
   const newBuyerCtrs   = sumField(newBuyerRows, "actual")
   const newCountryCtrs = sumField(newCountryRows, "actual")
   const cards = [
-    { label: "🆕 New Buyers",         value: formatNumber(newBuyerRows.length, 0),   color: "bg-purple-50 border-purple-200" },
-    { label: "New-Buyer Containers",  value: formatNumber(newBuyerCtrs),             color: "bg-green-50 border-green-200"   },
-    { label: "🌍 New Countries",      value: formatNumber(newCountryRows.length, 0), color: "bg-amber-50 border-amber-200"   },
-    { label: "New-Country Containers",value: formatNumber(newCountryCtrs),           color: "bg-blue-50 border-blue-200"     },
+    { label: "🆕 New Buyers",          value: formatNumber(newBuyerRows.length, 0),   color: "bg-purple-50 border-purple-200" },
+    { label: "New-Buyer Containers",   value: formatNumber(newBuyerCtrs),             color: "bg-green-50 border-green-200"   },
+    { label: "🌍 New Countries",       value: formatNumber(newCountryRows.length, 0), color: "bg-amber-50 border-amber-200"   },
+    { label: "New-Country Containers", value: formatNumber(newCountryCtrs),           color: "bg-blue-50 border-blue-200"     },
   ]
+
+  const Th = ({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "center" | "right" }) => (
+    <th className={`px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide text-${align}`}>{children}</th>
+  )
 
   return (
     <div className="p-4 space-y-6">
@@ -378,11 +383,53 @@ function NewBusinessView({
         <div className="flex items-center gap-2 mb-2">
           <span className="text-sm font-bold text-gray-800">New Buyers</span>
           <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold">{newBuyerRows.length}</span>
-          <span className="text-xs text-gray-400">— first-ever business this year</span>
+          <span className="text-xs text-gray-400">— business this year, none last year, no target</span>
         </div>
-        {newBuyerRows.length > 0
-          ? <div className="border border-gray-100 rounded-xl overflow-hidden"><BuyerTable rows={newBuyerRows} week={week} showSP={showSP} /></div>
-          : <p className="text-sm text-gray-400 py-3">No new buyers in this period — all business came from existing accounts.</p>}
+        {newBuyerRows.length > 0 ? (
+          <div className="border border-gray-100 rounded-xl overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <Th align="center">#</Th>
+                  <Th>Buyer</Th>
+                  <Th>Country</Th>
+                  {showSP && <Th>Sales Person</Th>}
+                  <Th align="center">Tier</Th>
+                  <Th align="center">Last Year</Th>
+                  <Th align="center">This Year (Ctrs)</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {newBuyerRows.map((r, i) => (
+                  <tr key={`${r.buyerCode}-${i}`}
+                    onClick={() => router.push(`/buyers/${encodeURIComponent(r.buyerCode || r.buyerName)}`)}
+                    className="hover:bg-green-50 cursor-pointer transition-colors">
+                    <td className="px-4 py-3 text-gray-400 tabular-nums text-center">{i + 1}</td>
+                    <td className="px-4 py-3 font-bold text-gray-800 hover:text-green-700">
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.buyerName}
+                        <span className="text-[9px] bg-purple-600 text-white px-1.5 py-0.5 rounded font-bold">NEW</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-left"><span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">{r.country}</span></td>
+                    {showSP && <td className="px-4 py-3 text-gray-600 text-xs">{r.salesPerson}</td>}
+                    <td className="px-4 py-3 text-center"><TierBadge tier={r.tier} /></td>
+                    <td className="px-4 py-3 text-center text-gray-400 tabular-nums">0</td>
+                    <td className="px-4 py-3 text-center font-black text-gray-900 tabular-nums">{formatNumber(r.actual)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3 text-gray-800 uppercase text-xs tracking-wide" colSpan={showSP ? 4 : 3}>Grand Total ({newBuyerRows.length} new buyers)</td>
+                  <td className="px-4 py-3 text-center text-gray-400 tabular-nums">0</td>
+                  <td className="px-4 py-3 text-center text-gray-900 tabular-nums">{formatNumber(newBuyerCtrs)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : <p className="text-sm text-gray-400 py-3">No new buyers in this period — all business came from existing/targeted accounts.</p>}
       </div>
 
       {/* New Countries */}
@@ -392,9 +439,48 @@ function NewBusinessView({
           <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">{newCountryRows.length}</span>
           <span className="text-xs text-gray-400">— markets entered for the first time this year</span>
         </div>
-        {newCountryRows.length > 0
-          ? <div className="border border-gray-100 rounded-xl overflow-hidden"><CountryTable rows={newCountryRows} week={week} /></div>
-          : <p className="text-sm text-gray-400 py-3">No new countries in this period.</p>}
+        {newCountryRows.length > 0 ? (
+          <div className="border border-gray-100 rounded-xl overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <Th align="center">#</Th>
+                  <Th>Country</Th>
+                  <Th align="center">Last Year</Th>
+                  <Th align="center">This Year (Ctrs)</Th>
+                  <Th align="center">Buyers</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {newCountryRows.map((r, i) => (
+                  <tr key={r.country}
+                    onClick={() => router.push(`/countries/${encodeURIComponent(r.country)}`)}
+                    className="hover:bg-green-50 cursor-pointer transition-colors">
+                    <td className="px-4 py-3 text-gray-400 tabular-nums text-center">{i + 1}</td>
+                    <td className="px-4 py-3 font-semibold text-gray-800 hover:text-green-700">
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.country}
+                        <span className="text-[9px] bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">NEW</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center text-gray-400 tabular-nums">0</td>
+                    <td className="px-4 py-3 text-center font-black text-gray-900 tabular-nums">{formatNumber(r.actual)}</td>
+                    <td className="px-4 py-3 text-center text-gray-500 text-xs">{r.activeBuyers}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3 text-gray-800 uppercase text-xs tracking-wide">Grand Total ({newCountryRows.length} new countries)</td>
+                  <td className="px-4 py-3 text-center text-gray-400 tabular-nums">0</td>
+                  <td className="px-4 py-3 text-center text-gray-900 tabular-nums">{formatNumber(newCountryCtrs)}</td>
+                  <td className="px-4 py-3" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : <p className="text-sm text-gray-400 py-3">No new countries in this period.</p>}
       </div>
     </div>
   )
@@ -517,8 +603,11 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const spRows      = (spData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
   const coordRows   = (coordData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
 
-  // New Business — first-time buyers/countries this FY: nothing last year, business now.
-  const isNewRow = (r: { previousYear: number; actual: number }) => r.previousYear <= 0 && r.actual > 0
+  // New Business — genuinely NEW: did business this year, NONE last year, and NO
+  // target set (buyers/countries that carry a target are planned/current accounts,
+  // not new). So: actual > 0  AND  previousYear == 0  AND  target == 0.
+  const isNewRow = (r: { previousYear: number; actual: number; target: number }) =>
+    r.actual > 0 && r.previousYear <= 0 && r.target <= 0
   const newBuyerRows   = (buyerData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.buyerName, r.country, r.salesPerson))
   const newCountryRows = (countryData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.country))
 
@@ -653,7 +742,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
             {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} /></div>}
             {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordRows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
             {tab === "newbusiness"&& buyerData && countryData && (
-              <NewBusinessView newBuyerRows={newBuyerRows} newCountryRows={newCountryRows} week={week} showSP={!isSP} />
+              <NewBusinessView newBuyerRows={newBuyerRows} newCountryRows={newCountryRows} showSP={!isSP} />
             )}
           </>
         )}
