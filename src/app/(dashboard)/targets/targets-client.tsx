@@ -37,7 +37,7 @@ function StatusBadge3({ row }: { row: { target: number; achievementPercent: numb
   return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ST3_STYLE[s]}`}>{ST3_LABEL[s]}</span>
 }
 
-type Tab = "country" | "buyer" | "salesperson" | "coordinator"
+type Tab = "country" | "buyer" | "salesperson" | "coordinator" | "newbusiness"
 
 interface Props { userRole?: UserRole; salesPerson?: string }
 
@@ -348,6 +348,58 @@ function SPTable({
   )
 }
 
+// ── New Business View ───────────────────────────────────────────────────────────
+//   New buyers & countries = those with NO business last year but actual > 0 now.
+//   Reuses the Buyer/Country tables (their "Prev Year" column shows 0, making the
+//   "brand-new" nature obvious).
+function NewBusinessView({
+  newBuyerRows, newCountryRows, week, showSP,
+}: {
+  newBuyerRows: BuyerPerformance[]; newCountryRows: CountryPerformance[]; week: number; showSP: boolean
+}) {
+  const newBuyerCtrs   = sumField(newBuyerRows, "actual")
+  const newCountryCtrs = sumField(newCountryRows, "actual")
+  const cards = [
+    { label: "🆕 New Buyers",         value: formatNumber(newBuyerRows.length, 0),   color: "bg-purple-50 border-purple-200" },
+    { label: "New-Buyer Containers",  value: formatNumber(newBuyerCtrs),             color: "bg-green-50 border-green-200"   },
+    { label: "🌍 New Countries",      value: formatNumber(newCountryRows.length, 0), color: "bg-amber-50 border-amber-200"   },
+    { label: "New-Country Containers",value: formatNumber(newCountryCtrs),           color: "bg-blue-50 border-blue-200"     },
+  ]
+
+  return (
+    <div className="p-4 space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {cards.map((c) => <SummaryCard key={c.label} {...c} />)}
+      </div>
+
+      {/* New Buyers */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-sm font-bold text-gray-800">New Buyers</span>
+          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold">{newBuyerRows.length}</span>
+          <span className="text-xs text-gray-400">— first-ever business this year</span>
+        </div>
+        {newBuyerRows.length > 0
+          ? <div className="border border-gray-100 rounded-xl overflow-hidden"><BuyerTable rows={newBuyerRows} week={week} showSP={showSP} /></div>
+          : <p className="text-sm text-gray-400 py-3">No new buyers in this period — all business came from existing accounts.</p>}
+      </div>
+
+      {/* New Countries */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-sm font-bold text-gray-800">New Countries</span>
+          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">{newCountryRows.length}</span>
+          <span className="text-xs text-gray-400">— markets entered for the first time this year</span>
+        </div>
+        {newCountryRows.length > 0
+          ? <div className="border border-gray-100 rounded-xl overflow-hidden"><CountryTable rows={newCountryRows} week={week} /></div>
+          : <p className="text-sm text-gray-400 py-3">No new countries in this period.</p>}
+      </div>
+    </div>
+  )
+}
+
 // ── Mobile Card ───────────────────────────────────────────────────────────────
 function MobilePerformanceCard({
   title, sub, target, actual, gap, pct, status, badge,
@@ -425,6 +477,15 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
             salesCoordinators: d.filterOptions.salesCoordinators ?? o.salesCoordinators,
           }))
         }
+      } else if (t === "newbusiness") {
+        // New Business needs BOTH buyer and country performance
+        const [bRes, cRes] = await Promise.all([
+          fetch(`/api/performance/buyers?${qs}`),
+          fetch(`/api/performance/countries?${qs}`),
+        ])
+        const [bD, cD] = await Promise.all([bRes.json(), cRes.json()])
+        setBuyerData(bD)
+        setCountryData(cD)
       } else if (t === "salesperson") {
         const res = await fetch(`/api/performance/salesperson?${qs}`)
         const d   = await res.json()
@@ -455,6 +516,11 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const countryRows = (countryData?.rows ?? []).filter((r) => matchQ(r.country))
   const spRows      = (spData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
   const coordRows   = (coordData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
+
+  // New Business — first-time buyers/countries this FY: nothing last year, business now.
+  const isNewRow = (r: { previousYear: number; actual: number }) => r.previousYear <= 0 && r.actual > 0
+  const newBuyerRows   = (buyerData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.buyerName, r.country, r.salesPerson))
+  const newCountryRows = (countryData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.country))
 
   // Summary cards always reflect the filtered rows (client-side)
   const filteredSummary = tab === "buyer" && buyerData
@@ -493,6 +559,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         {!isSP && (
           <TabBtn active={tab === "coordinator"} onClick={() => setTab("coordinator")}>📋 By Sales Coordinator</TabBtn>
         )}
+        <TabBtn active={tab === "newbusiness"} onClick={() => setTab("newbusiness")}>🆕 New Business</TabBtn>
       </div>
 
       {/* Filters */}
@@ -571,6 +638,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
               tab === "country"     ? `${countryRows.length} countries` :
               tab === "buyer"       ? `${filteredBuyerRows.length} buyers`    :
               tab === "salesperson" ? `${spRows.length} sales persons` :
+              tab === "newbusiness" ? `${newBuyerRows.length} new buyers · ${newCountryRows.length} new countries` :
                                       `${coordRows.length} sales coordinators`
             )}
           </span>
@@ -584,6 +652,9 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
             {tab === "buyer"      && buyerData   && <div className="hidden md:block"><BuyerTable   rows={filteredBuyerRows} week={week} showSP={!isSP} /></div>}
             {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} /></div>}
             {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordRows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
+            {tab === "newbusiness"&& buyerData && countryData && (
+              <NewBusinessView newBuyerRows={newBuyerRows} newCountryRows={newCountryRows} week={week} showSP={!isSP} />
+            )}
           </>
         )}
 
