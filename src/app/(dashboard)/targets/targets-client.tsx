@@ -348,16 +348,156 @@ function SPTable({
   )
 }
 
+// ── New Business PDF ──────────────────────────────────────────────────────────
+async function generateNewBusinessPDF(opts: {
+  newBuyers: BuyerPerformance[]
+  newCountries: CountryPerformance[]
+  showSP: boolean
+  fyLabel: string
+  periodLabel: string
+}) {
+  const { newBuyers, newCountries, showSP, fyLabel, periodLabel } = opts
+  const { default: jsPDF }     = await import("jspdf")
+  const { default: autoTable } = await import("jspdf-autotable")
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+  const W = 210, ML = 14, MR = 14
+  const NAVY:  [number,number,number] = [30, 58, 138]
+  const BLUE:  [number,number,number] = [29, 78, 216]
+  const SKY:   [number,number,number] = [14, 165, 233]
+  const GREEN: [number,number,number] = [5, 150, 105]
+  const AMBER: [number,number,number] = [217, 119, 6]
+  const PURPLE:[number,number,number] = [124, 58, 237]
+  let y = 0
+
+  const nbCtrs = newBuyers.reduce((s, b) => s + b.actual, 0)
+  const ncCtrs = newCountries.reduce((s, c) => s + c.actual, 0)
+
+  // ── Header ──
+  doc.setFillColor(...NAVY); doc.rect(0, 0, W, 10, "F")
+  doc.setFillColor(...BLUE); doc.rect(0, 10, W, 21, "F")
+  doc.setFillColor(...SKY);  doc.rect(0, 31, W, 2.5, "F")
+  doc.setTextColor(255, 255, 255)
+  doc.setFont("helvetica", "bold"); doc.setFontSize(5.5)
+  doc.text("SHAZIA RICE EXPORT  ·  CONFIDENTIAL  ·  INTERNAL USE ONLY", ML, 7)
+  doc.setFontSize(16); doc.text("New Business Report", ML, 20)
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9)
+  doc.text(`${periodLabel}  ·  FY ${fyLabel}`, ML, 27.5)
+  const gen = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+  doc.setFontSize(6.5); doc.text(`Generated: ${gen} IST`, W - MR, 27.5, { align: "right" })
+  y = 40
+
+  // ── Definition note ──
+  doc.setTextColor(107, 114, 128); doc.setFontSize(7.5); doc.setFont("helvetica", "italic")
+  doc.text("New Business = did business this year, none last year, and no target set (walk-in / unplanned accounts).", ML, y)
+  doc.setFont("helvetica", "normal")
+  y += 6
+
+  // ── KPI cards ──
+  const cards: Array<[string, string, [number,number,number]]> = [
+    ["New Buyers",           String(newBuyers.length),   PURPLE],
+    ["New-Buyer Containers", formatNumber(nbCtrs),       GREEN],
+    ["New Countries",        String(newCountries.length),AMBER],
+    ["New-Country Containers",formatNumber(ncCtrs),      SKY],
+  ]
+  const cw = (W - ML - MR - 3 * 3) / 4
+  cards.forEach(([label, value, rgb], i) => {
+    const cx = ML + i * (cw + 3)
+    doc.setFillColor(255, 255, 255)
+    doc.roundedRect(cx, y, cw, 20, 2, 2, "F")
+    doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.3); doc.roundedRect(cx, y, cw, 20, 2, 2, "S")
+    doc.setFillColor(...rgb); doc.roundedRect(cx, y, cw, 6, 2, 2, "F"); doc.rect(cx, y + 3, cw, 3, "F")
+    doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(5.4)
+    doc.text(label.toUpperCase(), cx + cw / 2, y + 4.2, { align: "center" })
+    doc.setTextColor(...NAVY); doc.setFontSize(13)
+    doc.text(value, cx + cw / 2, y + 15, { align: "center" })
+  })
+  y += 26
+
+  // ── Common table styling ──
+  const tableStyle = (head: string[][], body: (string|number)[][], foot: (string|number)[][], colStyles: Record<number, object>, headFill: [number,number,number]) => {
+    autoTable(doc, {
+      startY: y, margin: { left: ML, right: MR }, head, body, foot,
+      headStyles: { fillColor: headFill, textColor: [255,255,255], fontStyle: "bold", fontSize: 7, lineWidth: 0.2 },
+      bodyStyles: { fontSize: 7, lineWidth: 0.15, lineColor: [219, 234, 254] },
+      footStyles: { fillColor: NAVY, textColor: [255,255,255], fontStyle: "bold", fontSize: 7 },
+      alternateRowStyles: { fillColor: [249, 250, 251] },
+      tableLineWidth: 0.2, tableLineColor: [203, 213, 225],
+      columnStyles: colStyles, showFoot: "lastPage",
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    y = (doc as any).lastAutoTable.finalY + 6
+  }
+
+  // ── New Buyers table ──
+  doc.setTextColor(...NAVY); doc.setFont("helvetica", "bold"); doc.setFontSize(9)
+  doc.text(`New Buyers  (${newBuyers.length})`, ML, y); y += 3
+  if (newBuyers.length) {
+    const head = showSP
+      ? [["#", "Buyer", "Country", "Sales Person", "Tier", "Last Yr", "This Yr (Ctrs)"]]
+      : [["#", "Buyer", "Country", "Tier", "Last Yr", "This Yr (Ctrs)"]]
+    const body = newBuyers.map((b, i) => showSP
+      ? [i + 1, b.buyerName, b.country, b.salesPerson || "—", b.tier, "0", formatNumber(b.actual)]
+      : [i + 1, b.buyerName, b.country, b.tier, "0", formatNumber(b.actual)])
+    const lastCol = showSP ? 6 : 5
+    const foot = [[ "", "GRAND TOTAL", ...(showSP ? ["", ""] : [""]), "", "0", formatNumber(nbCtrs) ]]
+    tableStyle(head, body, foot,
+      { 0: { halign: "center", cellWidth: 8 }, [lastCol - 1]: { halign: "right" }, [lastCol]: { halign: "right" } },
+      PURPLE)
+  } else {
+    doc.setTextColor(107,114,128); doc.setFont("helvetica","normal"); doc.setFontSize(8)
+    doc.text("No new buyers in this period.", ML, y + 3); y += 8
+  }
+
+  // ── New Countries table ──
+  if (y > 250) { doc.addPage(); y = 16 }
+  doc.setTextColor(...NAVY); doc.setFont("helvetica", "bold"); doc.setFontSize(9)
+  doc.text(`New Countries  (${newCountries.length})`, ML, y); y += 3
+  if (newCountries.length) {
+    tableStyle(
+      [["#", "Country", "Last Yr", "This Yr (Ctrs)", "Buyers"]],
+      newCountries.map((c, i) => [i + 1, c.country, "0", formatNumber(c.actual), c.activeBuyers]),
+      [["", "GRAND TOTAL", "0", formatNumber(ncCtrs), ""]],
+      { 0: { halign: "center", cellWidth: 8 }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "center" } },
+      AMBER)
+  } else {
+    doc.setTextColor(107,114,128); doc.setFont("helvetica","normal"); doc.setFontSize(8)
+    doc.text("No new countries in this period.", ML, y + 3)
+  }
+
+  // ── Footer on all pages ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pages = (doc as any).internal.getNumberOfPages()
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p)
+    doc.setFillColor(...NAVY); doc.rect(0, 287, W, 10, "F")
+    doc.setFillColor(...SKY);  doc.rect(0, 287, W, 0.8, "F")
+    doc.setTextColor(156, 163, 175); doc.setFontSize(6); doc.setFont("helvetica", "normal")
+    doc.text("Shazia Rice Export  ·  New Business Report  ·  Confidential", ML, 293)
+    doc.text(`Page ${p} of ${pages}  ·  FY ${fyLabel}`, W - MR, 293, { align: "right" })
+  }
+
+  doc.save(`New-Business-FY${fyLabel}.pdf`)
+}
+
 // ── New Business View ───────────────────────────────────────────────────────────
 //   New buyers & countries = business this year, NONE last year, NO target set.
 //   No target/achievement columns here (new business has no target) — instead we
 //   show Last Year (0) vs This Year to make the "brand-new" nature obvious.
 function NewBusinessView({
-  newBuyerRows, newCountryRows, showSP,
+  newBuyerRows, newCountryRows, showSP, fyLabel, periodLabel,
 }: {
   newBuyerRows: BuyerPerformance[]; newCountryRows: CountryPerformance[]; showSP: boolean
+  fyLabel: string; periodLabel: string
 }) {
   const router = useRouter()
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const handlePDF = async () => {
+    setPdfBusy(true)
+    try { await generateNewBusinessPDF({ newBuyers: newBuyerRows, newCountries: newCountryRows, showSP, fyLabel, periodLabel }) }
+    catch (e) { console.error(e) }
+    finally { setPdfBusy(false) }
+  }
   const newBuyerCtrs   = sumField(newBuyerRows, "actual")
   const newCountryCtrs = sumField(newCountryRows, "actual")
   const cards = [
@@ -373,6 +513,23 @@ function NewBusinessView({
 
   return (
     <div className="p-4 space-y-6">
+      {/* Header + PDF export */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-bold text-gray-800">New Business — {periodLabel} · FY {fyLabel}</p>
+          <p className="text-xs text-gray-400">{newBuyerRows.length} new buyers · {newCountryRows.length} new countries</p>
+        </div>
+        <button
+          onClick={handlePDF}
+          disabled={pdfBusy || (newBuyerRows.length === 0 && newCountryRows.length === 0)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40"
+        >
+          {pdfBusy
+            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Generating…</>
+            : <>⬇ Download PDF</>}
+        </button>
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {cards.map((c) => <SummaryCard key={c.label} {...c} />)}
@@ -611,6 +768,18 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const newBuyerRows   = (buyerData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.buyerName, r.country, r.salesPerson))
   const newCountryRows = (countryData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.country))
 
+  // Labels for the New Business PDF / header
+  const nowFY = (() => {
+    const n = new Date(); const s = n.getMonth() >= 3 ? n.getFullYear() : n.getFullYear() - 1
+    return `${s}-${String(s + 1).slice(-2)}`
+  })()
+  const fyLabel = filters.fy || nowFY
+  const QLABEL: Record<string, string> = { "1": "Q1 (Apr–Jun)", "2": "Q2 (Jul–Sep)", "3": "Q3 (Oct–Dec)", "4": "Q4 (Jan–Mar)" }
+  const periodLabel = filters.fyWeek ? `Week ${filters.fyWeek}`
+    : filters.fyMonth ? `Month ${filters.fyMonth}`
+    : filters.fyQuarter ? (QLABEL[filters.fyQuarter] || `Q${filters.fyQuarter}`)
+    : "Full Year"
+
   // Summary cards always reflect the filtered rows (client-side)
   const filteredSummary = tab === "buyer" && buyerData
     ? {
@@ -742,7 +911,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
             {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} /></div>}
             {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordRows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
             {tab === "newbusiness"&& buyerData && countryData && (
-              <NewBusinessView newBuyerRows={newBuyerRows} newCountryRows={newCountryRows} showSP={!isSP} />
+              <NewBusinessView newBuyerRows={newBuyerRows} newCountryRows={newCountryRows} showSP={!isSP} fyLabel={fyLabel} periodLabel={periodLabel} />
             )}
           </>
         )}
