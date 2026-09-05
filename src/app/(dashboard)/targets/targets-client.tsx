@@ -352,11 +352,12 @@ function SPTable({
 async function generateNewBusinessPDF(opts: {
   newBuyers: BuyerPerformance[]
   newCountries: CountryPerformance[]
+  bySalesPerson: { sp: string; count: number; ctrs: number }[]
   showSP: boolean
   fyLabel: string
   periodLabel: string
 }) {
-  const { newBuyers, newCountries, showSP, fyLabel, periodLabel } = opts
+  const { newBuyers, newCountries, bySalesPerson, showSP, fyLabel, periodLabel } = opts
   const { default: jsPDF }     = await import("jspdf")
   const { default: autoTable } = await import("jspdf-autotable")
 
@@ -429,7 +430,20 @@ async function generateNewBusinessPDF(opts: {
     y = (doc as any).lastAutoTable.finalY + 6
   }
 
+  // ── By Sales Person table ──
+  if (showSP && bySalesPerson.length) {
+    doc.setTextColor(...NAVY); doc.setFont("helvetica", "bold"); doc.setFontSize(9)
+    doc.text("New Business by Sales Person", ML, y); y += 3
+    tableStyle(
+      [["#", "Sales Person", "New Buyers", "Containers", "Share %"]],
+      bySalesPerson.map((s, i) => [i + 1, s.sp, s.count, formatNumber(s.ctrs), `${nbCtrs > 0 ? Math.round((s.ctrs / nbCtrs) * 100) : 0}%`]),
+      [["", "GRAND TOTAL", newBuyers.length, formatNumber(nbCtrs), "100%"]],
+      { 0: { halign: "center", cellWidth: 8 }, 2: { halign: "center" }, 3: { halign: "right" }, 4: { halign: "right" } },
+      GREEN)
+  }
+
   // ── New Buyers table ──
+  if (y > 250) { doc.addPage(); y = 16 }
   doc.setTextColor(...NAVY); doc.setFont("helvetica", "bold"); doc.setFontSize(9)
   doc.text(`New Buyers  (${newBuyers.length})`, ML, y); y += 3
   if (newBuyers.length) {
@@ -492,9 +506,23 @@ function NewBusinessView({
 }) {
   const router = useRouter()
   const [pdfBusy, setPdfBusy] = useState(false)
+
+  // New business grouped by sales person — who brought how many new buyers / containers
+  const bySalesPerson = (() => {
+    const m = new Map<string, { count: number; ctrs: number }>()
+    for (const r of newBuyerRows) {
+      const sp = (r.salesPerson || "—").trim() || "—"
+      const e = m.get(sp) ?? { count: 0, ctrs: 0 }
+      e.count += 1
+      e.ctrs  += r.actual
+      m.set(sp, e)
+    }
+    return [...m.entries()].map(([sp, v]) => ({ sp, ...v })).sort((a, b) => b.ctrs - a.ctrs)
+  })()
+
   const handlePDF = async () => {
     setPdfBusy(true)
-    try { await generateNewBusinessPDF({ newBuyers: newBuyerRows, newCountries: newCountryRows, showSP, fyLabel, periodLabel }) }
+    try { await generateNewBusinessPDF({ newBuyers: newBuyerRows, newCountries: newCountryRows, bySalesPerson, showSP, fyLabel, periodLabel }) }
     catch (e) { console.error(e) }
     finally { setPdfBusy(false) }
   }
@@ -534,6 +562,54 @@ function NewBusinessView({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {cards.map((c) => <SummaryCard key={c.label} {...c} />)}
       </div>
+
+      {/* New Business by Sales Person */}
+      {showSP && bySalesPerson.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-bold text-gray-800">By Sales Person</span>
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">{bySalesPerson.length}</span>
+            <span className="text-xs text-gray-400">— who brought how much new business</span>
+          </div>
+          <div className="border border-gray-100 rounded-xl overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <Th align="center">#</Th>
+                  <Th>Sales Person</Th>
+                  <Th align="center">New Buyers</Th>
+                  <Th align="center">Containers</Th>
+                  <Th align="center">Share</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {bySalesPerson.map((s, i) => (
+                  <tr key={s.sp} className="hover:bg-green-50 transition-colors">
+                    <td className="px-4 py-3 text-gray-400 tabular-nums text-center">{i + 1}</td>
+                    <td className="px-4 py-3 font-bold text-gray-800">{s.sp}</td>
+                    <td className="px-4 py-3 text-center tabular-nums font-semibold text-purple-700">{s.count}</td>
+                    <td className="px-4 py-3 text-center font-black text-gray-900 tabular-nums">{formatNumber(s.ctrs)}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700">
+                        {newBuyerCtrs > 0 ? Math.round((s.ctrs / newBuyerCtrs) * 100) : 0}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+                  <td className="px-4 py-3" />
+                  <td className="px-4 py-3 text-gray-800 uppercase text-xs tracking-wide">Grand Total</td>
+                  <td className="px-4 py-3 text-center text-gray-900 tabular-nums">{newBuyerRows.length}</td>
+                  <td className="px-4 py-3 text-center text-gray-900 tabular-nums">{formatNumber(newBuyerCtrs)}</td>
+                  <td className="px-4 py-3 text-center text-gray-500 text-xs">100%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* New Buyers */}
       <div>
