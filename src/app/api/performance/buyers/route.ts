@@ -84,6 +84,28 @@ export async function GET(req: Request) {
     }
     const coordOf = (name: string) => coordByName.get(normName(name)) ?? ""
 
+    // ── Prior-history keys: every buyer (by code AND by name) that placed an
+    //    order in ANY financial year BEFORE the current one. A buyer is "New
+    //    Business" only if it has NO prior-year history (first-ever order this FY).
+    //    We check full history, not just last year, so a buyer that skipped a
+    //    year is not mistaken for new. ──
+    const curStartYear = Number(fy.split("-")[0])
+    const piFYStart = (r: PIRecord): number => {
+      if (r.financialYear && r.financialYear.trim()) return Number(r.financialYear.trim().split("-")[0])
+      const d = new Date(r.piDate)
+      if (isNaN(d.getTime())) return curStartYear   // unknown → don't falsely flag as prior
+      return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1
+    }
+    const priorBuyerKeys = new Set<string>()
+    for (const r of allPI) {
+      if (piFYStart(r) >= curStartYear) continue
+      if (r.buyerCode)        priorBuyerKeys.add(r.buyerCode.toUpperCase())
+      if (r.buyerCompanyName) priorBuyerKeys.add(r.buyerCompanyName.toUpperCase())
+    }
+    const hadPrior = (code?: string, name?: string) =>
+      (!!code && priorBuyerKeys.has(code.toUpperCase())) ||
+      (!!name && priorBuyerKeys.has(name.toUpperCase()))
+
     const canonByCode = new Map(canonical.map((c) => [c.canonicalBuyerCode, c]))
 
     const resolveSegment = (name: string, code?: string) => {
@@ -223,6 +245,7 @@ export async function GET(req: Request) {
         topBrands,
         basmatiContainers:       parseFloat(basmati.toFixed(1)),
         nonBasmatiContainers:    parseFloat(nonBasmati.toFixed(1)),
+        hadPriorHistory:         hadPrior(code, t.buyerCompanyName),
       }
     })
 
@@ -270,6 +293,7 @@ export async function GET(req: Request) {
         topBrands:               [],
         basmatiContainers:       parseFloat(bas.toFixed(1)),
         nonBasmatiContainers:    parseFloat(non.toFixed(1)),
+        hadPriorHistory:         hadPrior(k, sample.buyerCompanyName),
       })
     }
     const allRows = [...rows, ...extraRows]

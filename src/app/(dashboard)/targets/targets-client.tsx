@@ -390,7 +390,7 @@ async function generateNewBusinessPDF(opts: {
 
   // ── Definition note ──
   doc.setTextColor(107, 114, 128); doc.setFontSize(7.5); doc.setFont("helvetica", "italic")
-  doc.text("New Business = did business this year, none last year, and no target set (walk-in / unplanned accounts).", ML, y)
+  doc.text("New Business = first-ever order this FY — no orders in any earlier year (brand-new accounts).", ML, y)
   doc.setFont("helvetica", "normal")
   y += 6
 
@@ -495,9 +495,9 @@ async function generateNewBusinessPDF(opts: {
 }
 
 // ── New Business View ───────────────────────────────────────────────────────────
-//   New buyers & countries = business this year, NONE last year, NO target set.
-//   No target/achievement columns here (new business has no target) — instead we
-//   show Last Year (0) vs This Year to make the "brand-new" nature obvious.
+//   New buyers & countries = first-ever order this FY (no orders in ANY earlier
+//   year). No target/achievement columns here — instead we show Last Year (0) vs
+//   This Year to make the "brand-new" nature obvious.
 function NewBusinessView({
   newBuyerRows, newCountryRows, showSP, fyLabel, periodLabel,
 }: {
@@ -836,11 +836,12 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const spRows      = (spData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
   const coordRows   = (coordData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
 
-  // New Business — genuinely NEW: did business this year, NONE last year, and NO
-  // target set (buyers/countries that carry a target are planned/current accounts,
-  // not new). So: actual > 0  AND  previousYear == 0  AND  target == 0.
-  const isNewRow = (r: { previousYear: number; actual: number; target: number }) =>
-    r.actual > 0 && r.previousYear <= 0 && r.target <= 0
+  // New Business — genuinely NEW: placed their FIRST-EVER order this FY, i.e. no
+  // orders in ANY earlier financial year (full history, not just last year).
+  // The `hadPriorHistory` flag is computed server-side across all prior FYs.
+  // So: actual > 0  AND  !hadPriorHistory.
+  const isNewRow = (r: { actual: number; hadPriorHistory?: boolean }) =>
+    r.actual > 0 && !r.hadPriorHistory
   const newBuyerRows   = (buyerData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.buyerName, r.country, r.salesPerson))
   const newCountryRows = (countryData?.rows ?? []).filter((r) => isNewRow(r) && matchQ(r.country))
 

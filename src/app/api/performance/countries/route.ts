@@ -64,6 +64,23 @@ export async function GET(req: Request) {
     const currentPI  = filterRecords(filterPIByFY(allPI, fy))
     const previousPI = filterRecords(filterPIByFY(allPI, prevFY))
 
+    // ── Prior-history countries: any country shipped to in ANY financial year
+    //    BEFORE the current one. A country is "New Business" only if it has no
+    //    such prior history (first-ever shipment this FY). Full history, not just
+    //    last year. ──
+    const curStartYear = Number(fy.split("-")[0])
+    const piFYStart = (r: PIRecord): number => {
+      if (r.financialYear && r.financialYear.trim()) return Number(r.financialYear.trim().split("-")[0])
+      const d = new Date(r.piDate)
+      if (isNaN(d.getTime())) return curStartYear   // unknown → don't falsely flag as prior
+      return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1
+    }
+    const priorCountries = new Set<string>()
+    for (const r of allPI) {
+      if (piFYStart(r) >= curStartYear) continue
+      if (r.countries) priorCountries.add(r.countries.toUpperCase())
+    }
+
     const currentByCountry  = groupByCountry(currentPI)
     const previousByCountry = groupByCountry(previousPI)
 
@@ -141,6 +158,7 @@ export async function GET(req: Request) {
         isDreamMarket:      dreamMarkets.has(country.toUpperCase()),
         growthPct,
         topBuyers,
+        hadPriorHistory:    priorCountries.has(country.toUpperCase()),
       })
     }
 

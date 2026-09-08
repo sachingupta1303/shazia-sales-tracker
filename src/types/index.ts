@@ -171,6 +171,7 @@ export interface BuyerPerformance {
   status: PerformanceStatus
   achievementPercent: number
   lastOrderDate?: string
+  hadPriorHistory?: boolean   // ordered in ANY earlier FY (used to flag New Business)
 }
 
 export interface CountryPerformance {
@@ -185,6 +186,7 @@ export interface CountryPerformance {
   activeBuyers: number
   totalBuyers: number
   isDreamMarket?: boolean
+  hadPriorHistory?: boolean   // received orders in ANY earlier FY (New Business flag)
 }
 
 export interface SalesPersonPerformance {
