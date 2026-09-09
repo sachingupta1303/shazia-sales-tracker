@@ -96,15 +96,45 @@ export async function GET(req: Request) {
       if (isNaN(d.getTime())) return curStartYear   // unknown → don't falsely flag as prior
       return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1
     }
+    // Name tokens for a conservative prefix match: the SAME buyer often re-enters
+    // under a new code + slightly different name (extra/typo word, e.g. "Jebal
+    // Awras General Trading" → "Jebal Awras General Trading Comapny"). We treat two
+    // names as the same buyer only when the shorter one (>= 3 tokens) is a whole-
+    // token prefix of the longer — strict enough to skip generic-word collisions
+    // (e.g. "Al Maya International" vs "Al Ghanim & Al Maya …" do NOT match).
+    const nameToks = (s?: string) =>
+      (s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean)
+    const prefixSame = (a: string[], b: string[]) => {
+      const [short, long] = a.length <= b.length ? [a, b] : [b, a]
+      if (short.length < 3) return false
+      return short.every((t, i) => long[i] === t)
+    }
+
     const priorBuyerKeys = new Set<string>()
+    const priorNameToks: string[][] = []
+    const seenPriorName = new Set<string>()
     for (const r of allPI) {
       if (piFYStart(r) >= curStartYear) continue
-      if (r.buyerCode)        priorBuyerKeys.add(r.buyerCode.toUpperCase())
-      if (r.buyerCompanyName) priorBuyerKeys.add(r.buyerCompanyName.toUpperCase())
+      if (r.buyerCode) priorBuyerKeys.add(r.buyerCode.toUpperCase())
+      if (r.buyerCompanyName) {
+        priorBuyerKeys.add(r.buyerCompanyName.toUpperCase())
+        const nk = r.buyerCompanyName.toUpperCase()
+        if (!seenPriorName.has(nk)) {
+          seenPriorName.add(nk)
+          const t = nameToks(r.buyerCompanyName)
+          if (t.length >= 3) priorNameToks.push(t)
+        }
+      }
     }
-    const hadPrior = (code?: string, name?: string) =>
-      (!!code && priorBuyerKeys.has(code.toUpperCase())) ||
-      (!!name && priorBuyerKeys.has(name.toUpperCase()))
+    const hadPrior = (code?: string, name?: string) => {
+      if (code && priorBuyerKeys.has(code.toUpperCase())) return true
+      if (name && priorBuyerKeys.has(name.toUpperCase())) return true
+      if (name) {
+        const t = nameToks(name)
+        if (t.length >= 3) { for (const p of priorNameToks) if (prefixSame(t, p)) return true }
+      }
+      return false
+    }
 
     const canonByCode = new Map(canonical.map((c) => [c.canonicalBuyerCode, c]))
 
