@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Fragment } from "react"
 import { useRouter } from "next/navigation"
 import { FilterBar, type FilterState } from "@/components/ui/filter-bar"
 import { StatusBadge, TierBadge, GapCell, AchievementBar, SegmentTag } from "@/components/ui/status-badge"
@@ -506,6 +506,7 @@ function NewBusinessView({
 }) {
   const router = useRouter()
   const [pdfBusy, setPdfBusy] = useState(false)
+  const [expandedSP, setExpandedSP] = useState<string | null>(null)
 
   // New business grouped by sales person — who brought how many new buyers / containers
   const bySalesPerson = (() => {
@@ -518,6 +519,18 @@ function NewBusinessView({
       m.set(sp, e)
     }
     return [...m.entries()].map(([sp, v]) => ({ sp, ...v })).sort((a, b) => b.ctrs - a.ctrs)
+  })()
+
+  // Same new buyers grouped as full rows per sales person — for the click-to-expand drill-down
+  const buyersBySP = (() => {
+    const m = new Map<string, BuyerPerformance[]>()
+    for (const r of newBuyerRows) {
+      const sp = (r.salesPerson || "—").trim() || "—"
+      const list = m.get(sp) ?? []
+      list.push(r); m.set(sp, list)
+    }
+    for (const list of m.values()) list.sort((a, b) => b.actual - a.actual)
+    return m
   })()
 
   const handlePDF = async () => {
@@ -583,19 +596,59 @@ function NewBusinessView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {bySalesPerson.map((s, i) => (
-                  <tr key={s.sp} className="hover:bg-green-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-400 tabular-nums text-center">{i + 1}</td>
-                    <td className="px-4 py-3 font-bold text-gray-800">{s.sp}</td>
-                    <td className="px-4 py-3 text-center tabular-nums font-semibold text-purple-700">{s.count}</td>
-                    <td className="px-4 py-3 text-center font-black text-gray-900 tabular-nums">{formatNumber(s.ctrs)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700">
-                        {newBuyerCtrs > 0 ? Math.round((s.ctrs / newBuyerCtrs) * 100) : 0}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {bySalesPerson.map((s, i) => {
+                  const isOpen = expandedSP === s.sp
+                  const buyers = buyersBySP.get(s.sp) ?? []
+                  return (
+                    <Fragment key={s.sp}>
+                      <tr
+                        onClick={() => setExpandedSP(isOpen ? null : s.sp)}
+                        className={`transition-colors cursor-pointer ${isOpen ? "bg-green-50" : "hover:bg-green-50"}`}
+                        title="Click to see this person's new buyers"
+                      >
+                        <td className="px-4 py-3 text-gray-400 tabular-nums text-center">{i + 1}</td>
+                        <td className="px-4 py-3 font-bold text-gray-800">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`text-gray-400 text-[10px] transition-transform ${isOpen ? "rotate-90" : ""}`}>▶</span>
+                            {s.sp}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center tabular-nums font-semibold text-purple-700">{s.count}</td>
+                        <td className="px-4 py-3 text-center font-black text-gray-900 tabular-nums">{formatNumber(s.ctrs)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700">
+                            {newBuyerCtrs > 0 ? Math.round((s.ctrs / newBuyerCtrs) * 100) : 0}%
+                          </span>
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="bg-gray-50/70">
+                          <td className="px-2 py-2" />
+                          <td colSpan={4} className="px-4 py-2">
+                            <div className="rounded-lg border border-gray-100 bg-white overflow-hidden">
+                              {buyers.map((b, bi) => (
+                                <div
+                                  key={`${b.buyerCode}-${bi}`}
+                                  onClick={() => router.push(`/buyers/${encodeURIComponent(b.buyerCode || b.buyerName)}`)}
+                                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm border-b border-gray-50 last:border-0 hover:bg-green-50 cursor-pointer"
+                                >
+                                  <span className="flex items-center gap-2 min-w-0">
+                                    <span className="text-gray-400 tabular-nums w-5 text-right shrink-0">{bi + 1}</span>
+                                    <span className="font-semibold text-gray-800 truncate hover:text-green-700">{b.buyerName}</span>
+                                    <span className="bg-blue-50 text-blue-700 text-[11px] px-1.5 py-0.5 rounded-full shrink-0">{b.country}</span>
+                                  </span>
+                                  <span className="font-black text-gray-900 tabular-nums shrink-0">
+                                    {formatNumber(b.actual)}<span className="text-gray-400 font-normal text-xs"> ctr</span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
               <tfoot>
                 <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
