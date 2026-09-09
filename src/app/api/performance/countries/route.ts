@@ -174,9 +174,24 @@ export async function GET(req: Request) {
       decliningCount: rows.filter((r) => (r.growthPct ?? 0) < 0).length,
     }
 
+    // Filter-dropdown options from the FULL data (so the Sales Person / Country
+    // dropdowns are populated even when the Country tab loads first).
+    const filterOptions = {
+      salesPersons: [...new Set([
+        ...targets.map((t) => t.salesPerson),
+        ...allPI.map((r) => r.salesPerson),
+      ].filter(Boolean))].sort(),
+      countries: [...new Set([
+        ...targets.map((t) => t.countries),
+        ...allPI.map((r) => r.countries),
+      ].filter(Boolean))].sort(),
+      salesCoordinators: [...new Set(allPI.map((r) => r.salesCoordinator).filter(Boolean))].sort(),
+    }
+
     return NextResponse.json({
       rows,
       summary,
+      filterOptions,
       meta: { fy, prevFY, week, total: rows.length, generatedAt: new Date().toISOString() },
     })
   } catch (error) {

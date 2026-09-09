@@ -783,8 +783,16 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         const res = await fetch(`/api/performance/countries?${qs}`)
         const d   = await res.json()
         setCountryData(d)
-        const ctrs: string[] = d.rows.map((r: any) => r.country as string)
-        setOptions((o) => ({ ...o, countries: Array.from(new Set(ctrs)) }))
+        if (d.filterOptions) {
+          setOptions((o) => ({
+            countries:         d.filterOptions.countries?.length ? d.filterOptions.countries : o.countries,
+            salesPersons:      d.filterOptions.salesPersons ?? o.salesPersons,
+            salesCoordinators: d.filterOptions.salesCoordinators ?? o.salesCoordinators,
+          }))
+        } else {
+          const ctrs: string[] = d.rows.map((r: any) => r.country as string)
+          setOptions((o) => ({ ...o, countries: Array.from(new Set(ctrs)) }))
+        }
       } else if (t === "buyer") {
         const res = await fetch(`/api/performance/buyers?${qs}`)
         const d   = await res.json()
@@ -805,6 +813,16 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         const [bD, cD] = await Promise.all([bRes.json(), cRes.json()])
         setBuyerData(bD)
         setCountryData(cD)
+        // Populate the filter dropdowns (Sales Person / Country / Coordinator) —
+        // the buyers response carries filterOptions; without this the Sales Person
+        // filter is empty on the New Business tab.
+        if (bD.filterOptions) {
+          setOptions((o) => ({
+            countries:         bD.filterOptions.countries?.length ? bD.filterOptions.countries : o.countries,
+            salesPersons:      bD.filterOptions.salesPersons ?? o.salesPersons,
+            salesCoordinators: bD.filterOptions.salesCoordinators ?? o.salesCoordinators,
+          }))
+        }
       } else if (t === "salesperson") {
         const res = await fetch(`/api/performance/salesperson?${qs}`)
         const d   = await res.json()
