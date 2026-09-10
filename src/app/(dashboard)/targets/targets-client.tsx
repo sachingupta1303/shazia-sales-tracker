@@ -6,6 +6,7 @@ import { FilterBar, type FilterState } from "@/components/ui/filter-bar"
 import { StatusBadge, TierBadge, GapCell, AchievementBar, SegmentTag } from "@/components/ui/status-badge"
 import { SummaryCard } from "@/components/ui/page-header"
 import { formatNumber } from "@/lib/utils"
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList } from "recharts"
 import type { UserRole, CountryPerformance, BuyerPerformance, SalesPersonPerformance } from "@/types"
 
 // ── Total helpers ────────────────────────────────────────────────────────────
@@ -533,6 +534,19 @@ function NewBusinessView({
     return m
   })()
 
+  // New business grouped by country — new-buyer containers per country (for the chart)
+  const byCountry = (() => {
+    const m = new Map<string, { country: string; ctrs: number; buyers: number }>()
+    for (const r of newBuyerRows) {
+      const c = (r.country || "—").trim() || "—"
+      const e = m.get(c) ?? { country: c, ctrs: 0, buyers: 0 }
+      e.ctrs += r.actual; e.buyers += 1
+      m.set(c, e)
+    }
+    return [...m.values()].sort((a, b) => b.ctrs - a.ctrs)
+  })()
+  const topCountries = byCountry.slice(0, 12)
+
   const handlePDF = async () => {
     setPdfBusy(true)
     try { await generateNewBusinessPDF({ newBuyers: newBuyerRows, newCountries: newCountryRows, bySalesPerson, showSP, fyLabel, periodLabel }) }
@@ -570,6 +584,35 @@ function NewBusinessView({
             : <>⬇ Download PDF</>}
         </button>
       </div>
+
+      {/* New Business by Country — chart at the top */}
+      {byCountry.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-bold text-gray-800">New Business by Country</span>
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">{byCountry.length}</span>
+            <span className="text-xs text-gray-400">— new-buyer containers per country{byCountry.length > topCountries.length ? ` (top ${topCountries.length})` : ""}</span>
+          </div>
+          <div className="border border-gray-100 rounded-xl p-3 bg-white">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={topCountries} margin={{ top: 16, right: 10, bottom: 0, left: -18 }}>
+                <XAxis
+                  dataKey="country" interval={0} angle={-25} textAnchor="end" height={90}
+                  tick={{ fontSize: 10, fill: "#9ca3af" }}
+                />
+                <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                  formatter={(v: any, _n: any, p: any) => [`${formatNumber(Number(v))} containers · ${p?.payload?.buyers} new buyers`, p?.payload?.country]}
+                />
+                <Bar dataKey="ctrs" name="Containers" fill="#16a34a" radius={[3, 3, 0, 0]}>
+                  <LabelList dataKey="ctrs" position="top" formatter={(v: any) => formatNumber(Number(v))} style={{ fontSize: 10, fill: "#6b7280" }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
