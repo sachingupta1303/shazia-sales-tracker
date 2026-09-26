@@ -58,6 +58,7 @@ import type {
   MeetingHistoryEntry,
   PerformanceStatus,
   OthersBuyerSummary,
+  CoordinatorReviewRow,
 } from "@/types"
 
 // ─── Meeting target rules per segment ────────────────────────────────────────
@@ -525,6 +526,70 @@ export async function getPendingReviews(params: {
     }
   }
   return pending
+}
+
+// ─── Weekly Coordinator Review (reasons for good buyers with no / low orders) ──
+
+const COORD_REVIEW_HEADERS = [
+  "ID", "FY Week", "Financial Year", "Review Date", "Sales Coordinator",
+  "Buyer Name", "Country", "Tier", "Target", "Actual", "Last Year",
+  "Last Order Date", "Status", "Reason", "Remark", "Action Plan",
+  "Expected Order", "Submitted At",
+]
+
+/** Read coordinator-review submissions, optionally filtered by FY (+ week). */
+export async function getCoordinatorReviews(
+  fy?: FinancialYear, fyWeek?: number
+): Promise<CoordinatorReviewRow[]> {
+  try {
+    await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.COORDINATOR_REVIEW, COORD_REVIEW_HEADERS)
+    const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.COORDINATOR_REVIEW)
+    if (!rows.length) return []
+    const [headerRow, ...dataRows] = rows
+    const h = buildHeaderMap(headerRow)
+    return dataRows
+      .filter((r) => getCell(r, h, "ID"))
+      .map((r) => ({
+        id:               getCell(r, h, "ID"),
+        fyWeek:           getCellNum(r, h, "FY Week"),
+        financialYear:    getCell(r, h, "Financial Year"),
+        reviewDate:       getCell(r, h, "Review Date"),
+        salesCoordinator: getCell(r, h, "Sales Coordinator"),
+        buyerName:        getCell(r, h, "Buyer Name"),
+        country:          getCell(r, h, "Country"),
+        tier:             getCell(r, h, "Tier"),
+        target:           getCellNum(r, h, "Target"),
+        actual:           getCellNum(r, h, "Actual"),
+        lastYear:         getCellNum(r, h, "Last Year"),
+        lastOrderDate:    getCell(r, h, "Last Order Date"),
+        status:           getCell(r, h, "Status"),
+        reason:           getCell(r, h, "Reason"),
+        remark:           getCell(r, h, "Remark"),
+        actionPlan:       getCell(r, h, "Action Plan"),
+        expectedOrder:    getCell(r, h, "Expected Order"),
+        submittedAt:      getCell(r, h, "Submitted At"),
+      }))
+      .filter((r) => (!fy || r.financialYear === fy) && (fyWeek == null || r.fyWeek === fyWeek))
+  } catch { return [] }
+}
+
+/** Append coordinator-review rows (one per buyer). */
+export async function addCoordinatorReviews(rows: CoordinatorReviewRow[]): Promise<void> {
+  if (!rows.length) return
+  await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.COORDINATOR_REVIEW, COORD_REVIEW_HEADERS)
+  const now = Date.now()
+  await appendToSheet(
+    SHEETS.SALES_TRACKING,
+    SHEET_NAMES.COORDINATOR_REVIEW,
+    rows.map((r, i) => [
+      r.id || `CR-${now}-${i}`,
+      r.fyWeek, r.financialYear, r.reviewDate, r.salesCoordinator,
+      r.buyerName, r.country, r.tier, r.target, r.actual, r.lastYear,
+      r.lastOrderDate, r.status, r.reason ?? "", r.remark ?? "",
+      r.actionPlan ?? "", r.expectedOrder ?? "", r.submittedAt,
+    ])
+  )
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.COORDINATOR_REVIEW)
 }
 
 function monthNameForFYWeek(week: number): string {
@@ -1615,6 +1680,41 @@ export function groupBySalesPerson(records: PIRecord[]): Record<string, PIRecord
     },
     {} as Record<string, PIRecord[]>
   )
+}
+
+/**
+ * Owner attribution for orders. A buyer's "owner" is the sales person on its
+ * TARGET row — which may be a combined "A / B" name for jointly-managed accounts.
+ * Orders (PIs) are credited to the buyer's owner rather than to whichever
+ * individual person booked the PI, so combined-owner targets match their actual
+ * orders and nothing is double-counted. Buyers with no target fall back to the
+ * PI's own salesPerson. Buyers are matched by code (via master) or by normalized
+ * company name. Returns a function mapping a PI record → its owner name.
+ */
+export function buildOwnerResolver(
+  targets: TargetRecord[],
+  buyerMaster: BuyerRecord[],
+): (r: PIRecord) => string {
+  const norm = (s: string) => (s ?? "").toLowerCase().trim()
+  const codeByName = new Map<string, string>()
+  for (const b of buyerMaster) {
+    if (b.buyerCompanyName && b.buyerCode) codeByName.set(norm(b.buyerCompanyName), b.buyerCode.toUpperCase())
+  }
+  const ownerByName = new Map<string, string>()
+  const ownerByCode = new Map<string, string>()
+  for (const t of targets) {
+    const owner = (t.salesPerson || "").trim()
+    if (!owner || !t.buyerCompanyName) continue
+    const nk = norm(t.buyerCompanyName)
+    if (!ownerByName.has(nk)) ownerByName.set(nk, owner)
+    const code = codeByName.get(nk)
+    if (code && !ownerByCode.has(code)) ownerByCode.set(code, owner)
+  }
+  return (r: PIRecord) => {
+    const code = (r.buyerCode || "").toUpperCase()
+    if (code && ownerByCode.has(code)) return ownerByCode.get(code)!
+    return ownerByName.get(norm(r.buyerCompanyName)) ?? r.salesPerson
+  }
 }
 
 // ─── 80/20 Tier Classification ────────────────────────────────────────────────

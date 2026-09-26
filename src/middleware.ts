@@ -7,6 +7,8 @@ const PUBLIC_PREFIXES = [
   "/api/auth",
   "/meeting-done",                       // magic-link meeting completion (coordinators, no login)
   "/meeting-reschedule",                 // magic-link reschedule (no login)
+  "/coord-review",                       // magic-link weekly coordinator review (no login)
+  "/api/coord-review",                   // token-based review API (no login)
   "/api/8020/meetings/complete-token",   // token-based API (no login)
   "/api/8020/meetings/",                 // reschedule API — token-auth inside route
   "/api/8020/cron-batch",               // cron endpoint — auth handled inside route (Bearer token)

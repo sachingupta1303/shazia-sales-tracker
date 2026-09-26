@@ -41,6 +41,8 @@ export const SHEET_NAMES = {
   ALERT_LOG_8020:         "ALERT_LOG_8020",
   // Magic-link done tokens (no-login meeting completion)
   MEETING_DONE_TOKENS:    "MEETING_DONE_TOKENS",
+  // Weekly coordinator review — reasons for good buyers with no / low orders
+  COORDINATOR_REVIEW:     "COORDINATOR_REVIEW",
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -255,6 +257,31 @@ export async function updateSheetRow(
     range,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [values] },
+  })
+}
+
+// ─── Update a single column (contiguous run, one API call) ───────────────────
+
+/**
+ * Write a contiguous run of values into ONE column, in a single API call, without
+ * touching any other column. `colLetter` e.g. "G"; values[0] lands on `startRow`.
+ * Safer than overwriteSheetRows when you only need to fill/refresh one column.
+ */
+export async function updateSheetColumn(
+  spreadsheetId: string,
+  sheetName: string,
+  colLetter: string,
+  startRow: number,
+  values: (string | number | null)[],
+): Promise<void> {
+  if (values.length === 0) return
+  const sheets = getSheetsClient()
+  const endRow = startRow + values.length - 1
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!${colLetter}${startRow}:${colLetter}${endRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: values.map((v) => [v]) },
   })
 }
 

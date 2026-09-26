@@ -603,6 +603,46 @@ export interface Buyer8020 {
   notes?: string
 }
 
+// ─── Weekly Coordinator Review (reasons for good buyers with no / low orders) ──
+
+export type CoordinatorRiskStatus = "NO_ORDER" | "LOW"
+
+/** A buyer that needs a reason from its sales coordinator this week */
+export interface CoordinatorRiskBuyer {
+  buyerName:      string
+  country:        string
+  tier:           string
+  target:         number     // annual target containers
+  actual:         number     // current-FY containers so far
+  achievementPct: number     // actual vs pace (target × week/52)
+  lastYear:       number     // previous-FY containers
+  lastOrderDate:  string     // most recent PI date (any FY), "" if never
+  daysSinceOrder: number | null
+  status:         CoordinatorRiskStatus
+}
+
+/** One submitted review line — a coordinator's reason for one buyer, one week */
+export interface CoordinatorReviewRow {
+  id?:              string
+  fyWeek:           number
+  financialYear:    string
+  reviewDate:       string
+  salesCoordinator: string
+  buyerName:        string
+  country:          string
+  tier:             string
+  target:           number
+  actual:           number
+  lastYear:         number
+  lastOrderDate:    string
+  status:           string
+  reason:           string
+  remark:           string
+  actionPlan:       string
+  expectedOrder:    string
+  submittedAt:      string
+}
+
 /** Meeting schedule record (from API) — joined with real performance from PI_BACKEND_MASTER */
 export interface MeetingSchedule {
   // ── Identity ────────────────────────────────────────────────

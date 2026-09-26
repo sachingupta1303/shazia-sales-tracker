@@ -62,6 +62,12 @@ const NAV_ITEMS = [
     roles: ["SALES_PERSON", "MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
   },
   {
+    label: "Weekly Review",
+    href: "/coordinator-review",
+    icon: "📝",
+    roles: ["MANAGER", "DIRECTOR", "SUPER_ADMIN", "ADMIN", "USER"],
+  },
+  {
     label: "Monthly MIS",
     href: "/monthly-report",
     icon: "📅",

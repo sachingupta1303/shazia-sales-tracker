@@ -15,6 +15,7 @@
 
 import { getMeetingSchedules, getAlertLogRows, addAlertLogEntry, createDoneToken } from "./data"
 import { sendConsolidatedEmail, type ConsolidatedMeetingRow } from "./email-8020"
+import { sendPendingCoordinatorReviewReminders } from "./coordinator-review"
 import { APP_BASE_URL } from "./mailer"
 import type { MeetingSchedule } from "@/types"
 
@@ -87,6 +88,16 @@ export async function runReminderBatch(opts: {
     result.skipped    = true
     result.skipReason = `Outside office hours (~${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")} IST; window is 09:30–18:00 IST)`
     return result
+  }
+
+  // 1b. Weekly coordinator-review reminders — runs daily to pending coordinators,
+  //     stops for anyone who has already submitted this week. Wrapped so a failure
+  //     here can never break the meeting-reminder batch below.
+  try {
+    const cr = await sendPendingCoordinatorReviewReminders(now)
+    if (cr.sent || cr.failed) console.log(`[coord-review] sent=${cr.sent} skipped=${cr.skipped} failed=${cr.failed} pending=${cr.pending}`)
+  } catch (e) {
+    console.error("[coord-review] reminder failed:", (e as Error).message)
   }
 
   // 2. Fetch meetings + today's alert log
