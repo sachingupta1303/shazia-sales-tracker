@@ -84,20 +84,23 @@ export async function getRiskBuyersByCoordinator(fy: FinancialYear): Promise<Coo
 
   const groups = new Map<string, CoordinatorRiskGroup>()
   for (const b of buyers8020) {
-    if (b.tier !== "TIER1" && b.tier !== "TIER2" && b.tier !== "TIER3") continue
     const coord = (b.salesCoordinator || "").trim()
     if (!coord) continue
 
-    const nk     = norm(b.buyerName)
-    const actual = actualByName.get(nk) ?? 0
-    const prev   = prevByName.get(nk) ?? 0
-    const target = b.annualTarget || b.targetContainers || 0
-    const due    = targetDueTillWeek(target, week)
-    const achPct = due > 0 ? Math.round((actual / due) * 100) : (actual > 0 ? 100 : 0)
+    const nk       = norm(b.buyerName)
+    const actual   = actualByName.get(nk) ?? 0
+    const prev     = prevByName.get(nk) ?? 0
+    const target   = b.annualTarget || b.targetContainers || 0
+    const due      = targetDueTillWeek(target, week)
+    const achPct   = due > 0 ? Math.round((actual / due) * 100) : (actual > 0 ? 100 : 0)
+    const isTiered = b.tier === "TIER1" || b.tier === "TIER2" || b.tier === "TIER3"
 
     const noOrder = actual === 0 && (prev > 0 || target > 0)
     const low     = actual > 0 && target > 0 && achPct < 50
-    if (!noOrder && !low) continue
+    // Include: tiered buyers that are dormant/low, AND any buyer (incl. untiered
+    // "OTHERS") given a real target of 10+ whose order hasn't come this FY (zero).
+    const targetZero = target >= 10 && actual === 0
+    if (!((isTiered && (noOrder || low)) || targetZero)) continue
 
     const lms = lastMs.get(nk)
     const buyer: CoordinatorRiskBuyer = {

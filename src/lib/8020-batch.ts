@@ -91,13 +91,17 @@ export async function runReminderBatch(opts: {
   }
 
   // 1b. Weekly coordinator-review reminders — runs daily to pending coordinators,
-  //     stops for anyone who has already submitted this week. Wrapped so a failure
-  //     here can never break the meeting-reminder batch below.
-  try {
-    const cr = await sendPendingCoordinatorReviewReminders(now)
-    if (cr.sent || cr.failed) console.log(`[coord-review] sent=${cr.sent} skipped=${cr.skipped} failed=${cr.failed} pending=${cr.pending}`)
-  } catch (e) {
-    console.error("[coord-review] reminder failed:", (e as Error).message)
+  //     stops for anyone who has already submitted this week. Gated behind
+  //     COORD_REVIEW_AUTOSEND so real coordinators aren't emailed until testing is
+  //     done; the manager "Send links to pending" button works regardless.
+  //     Wrapped so a failure here can never break the meeting-reminder batch below.
+  if (process.env.COORD_REVIEW_AUTOSEND === "1") {
+    try {
+      const cr = await sendPendingCoordinatorReviewReminders(now)
+      if (cr.sent || cr.failed) console.log(`[coord-review] sent=${cr.sent} skipped=${cr.skipped} failed=${cr.failed} pending=${cr.pending}`)
+    } catch (e) {
+      console.error("[coord-review] reminder failed:", (e as Error).message)
+    }
   }
 
   // 2. Fetch meetings + today's alert log
