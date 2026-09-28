@@ -81,62 +81,44 @@ export function CoordReviewClient({
             The <b>{buyers.length}</b> buyers below have no orders / very low orders this year. Please fill a reason & next step for each.
           </p>
 
-          <div className="space-y-4">
+          <div className="space-y-2">
             {buyers.map((b, i) => {
               const e = entries[b.buyerName] ?? { reason: "", remark: "", actionPlan: "", expectedOrder: "" }
               return (
-                <div key={b.buyerName} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                  {/* Buyer context (read-only) */}
-                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-                    <div className="flex items-start justify-between gap-2 flex-wrap">
-                      <div>
-                        <span className="text-xs text-gray-400 mr-1">#{i + 1}</span>
-                        <span className="font-bold text-gray-900">{b.buyerName}</span>
-                        <span className="text-xs text-gray-500 ml-2">{b.country} · {b.tier.replace("TIER", "T")}</span>
-                      </div>
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${b.status === "NO_ORDER" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
-                        {b.status === "NO_ORDER" ? "No order" : `Low · ${b.achievementPct}%`}
-                      </span>
+                <div key={b.buyerName} className="bg-white rounded-xl border border-gray-200 p-3">
+                  {/* Buyer line + status */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm min-w-0 truncate">
+                      <span className="text-xs text-gray-400 mr-1">#{i + 1}</span>
+                      <span className="font-bold text-gray-900">{b.buyerName}</span>
+                      <span className="text-xs text-gray-500 ml-1">· {b.country} · {b.tier.replace("TIER", "T")}</span>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2 text-xs">
-                      <Stat label="Target" value={String(b.target)} />
-                      <Stat label="So far" value={`${b.actual} (${b.achievementPct}%)`} danger={b.actual === 0} />
-                      <Stat label="Last year" value={String(b.lastYear)} />
-                      <Stat label="Last order" value={b.lastOrderDate || "—"} />
-                      <Stat label="Days since" value={b.daysSinceOrder != null ? `${b.daysSinceOrder}d` : "—"} />
-                    </div>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${b.status === "NO_ORDER" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                      {b.status === "NO_ORDER" ? "No order" : `Low · ${b.achievementPct}%`}
+                    </span>
                   </div>
-
-                  {/* Inputs */}
-                  <div className="p-4 grid gap-3 sm:grid-cols-2">
-                    <label className="text-sm">
-                      <span className="block text-xs font-semibold text-gray-600 mb-1">Reason (why no order)</span>
-                      <select value={e.reason} onChange={(ev) => set(b.buyerName, "reason", ev.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="">— select —</option>
-                        {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    </label>
-                    <label className="text-sm">
-                      <span className="block text-xs font-semibold text-gray-600 mb-1">Expected next order</span>
-                      <select value={e.expectedOrder} onChange={(ev) => set(b.buyerName, "expectedOrder", ev.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="">— select —</option>
-                        {EXPECTED.map((x) => <option key={x} value={x}>{x}</option>)}
-                      </select>
-                    </label>
-                    <label className="text-sm sm:col-span-2">
-                      <span className="block text-xs font-semibold text-gray-600 mb-1">Remark (detail)</span>
-                      <input value={e.remark} onChange={(ev) => set(b.buyerName, "remark", ev.target.value)}
-                        placeholder="e.g. buyer said the price is too high"
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    </label>
-                    <label className="text-sm sm:col-span-2">
-                      <span className="block text-xs font-semibold text-gray-600 mb-1">Action plan / next step</span>
-                      <input value={e.actionPlan} onChange={(ev) => set(b.buyerName, "actionPlan", ev.target.value)}
-                        placeholder="e.g. will send a new price, offer a sample"
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    </label>
+                  {/* One-line context */}
+                  <div className="text-xs text-gray-500 mt-1">
+                    Target <b className="text-gray-700">{b.target}</b> · So far <b className={b.actual === 0 ? "text-red-600" : "text-gray-700"}>{b.actual}</b> ({b.achievementPct}%) · Last yr {b.lastYear} · Last order {b.lastOrderDate || "—"}{b.daysSinceOrder != null ? ` (${b.daysSinceOrder}d)` : ""}
+                  </div>
+                  {/* Inputs — 2×2 compact, placeholders instead of stacked labels */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                    <select value={e.reason} onChange={(ev) => set(b.buyerName, "reason", ev.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500">
+                      <option value="">Reason — why no order</option>
+                      {REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <select value={e.expectedOrder} onChange={(ev) => set(b.buyerName, "expectedOrder", ev.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500">
+                      <option value="">Expected next order</option>
+                      {EXPECTED.map((x) => <option key={x} value={x}>{x}</option>)}
+                    </select>
+                    <input value={e.remark} onChange={(ev) => set(b.buyerName, "remark", ev.target.value)}
+                      placeholder="Remark (detail)"
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input value={e.actionPlan} onChange={(ev) => set(b.buyerName, "actionPlan", ev.target.value)}
+                      placeholder="Action plan / next step"
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                 </div>
               )
@@ -163,25 +145,18 @@ export function CoordReviewClient({
 }
 
 function Shell({ coordinator, week, fy, children }: { coordinator: string; week: number; fy: string; children: React.ReactNode }) {
+  // h-screen + overflow-y-auto: this page owns its own scroll, because the app's
+  // root <body> is overflow-hidden (for the dashboard) which otherwise clips it.
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen overflow-y-auto bg-gray-50">
       <div className="bg-teal-700 text-white">
-        <div className="max-w-3xl mx-auto px-4 py-5">
+        <div className="max-w-3xl mx-auto px-4 py-4">
           <div className="text-xs opacity-80 tracking-wide">SHAZIA RICE · WEEKLY REVIEW</div>
-          <div className="text-xl font-bold mt-0.5">Buyers needing a reason</div>
+          <div className="text-lg font-bold mt-0.5">Buyers needing a reason</div>
           <div className="text-sm opacity-90 mt-0.5">{coordinator} · Week {week} · FY {fy}</div>
         </div>
       </div>
-      <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">{children}</div>
-    </div>
-  )
-}
-
-function Stat({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
-  return (
-    <div className="bg-white rounded-lg border border-gray-100 px-2 py-1.5">
-      <div className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</div>
-      <div className={`font-bold ${danger ? "text-red-600" : "text-gray-800"}`}>{value}</div>
+      <div className="max-w-3xl mx-auto px-4 py-4 space-y-2">{children}</div>
     </div>
   )
 }
