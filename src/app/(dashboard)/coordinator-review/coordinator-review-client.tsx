@@ -63,9 +63,9 @@ export function CoordinatorReviewClient() {
         body: JSON.stringify({ mode: "test", testEmail }),
       })
       const d = await res.json()
-      if (!res.ok || !d.ok) { setMsg(`Test email fail: ${d.reason || d.error || "unknown"}`); return }
-      setMsg(`✓ Test email bhej diya → ${d.to} (${d.coordinator} · ${d.count} buyers). Inbox check karo.`)
-    } catch { setMsg("Test email fail hua") }
+      if (!res.ok || !d.ok) { setMsg(`Test email failed: ${d.reason || d.error || "unknown"}`); return }
+      setMsg(`✓ Test email sent → ${d.to} (${d.coordinator} · ${d.count} buyers). Check the inbox.`)
+    } catch { setMsg("Test email failed") }
     finally { setTesting(false) }
   }
 
@@ -121,7 +121,7 @@ export function CoordinatorReviewClient() {
           className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40">
           {testing ? "Sending…" : "Send test email"}
         </button>
-        <span className="text-xs text-blue-700/70">— ek coordinator ka sample email is address par (real coordinators ko nahi)</span>
+        <span className="text-xs text-blue-700/70">— sends one coordinator&apos;s sample email to this address (not to real coordinators)</span>
       </div>
 
       {msg && <div className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-xl px-4 py-2">{msg}</div>}

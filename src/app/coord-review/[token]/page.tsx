@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic"
 export default async function CoordReviewPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
   const t = verifyReviewToken(token)
-  if (!t) return <ErrorPage message="Ye link valid nahi hai. Latest reminder email ka button use karo." />
+  if (!t) return <ErrorPage message="This link is not valid. Please use the button in the latest reminder email." />
 
   const fy   = getCurrentFY()
   const week = getCurrentFYWeek()

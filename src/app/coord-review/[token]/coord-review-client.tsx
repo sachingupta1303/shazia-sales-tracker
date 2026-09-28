@@ -39,15 +39,15 @@ export function CoordReviewClient({
       const reviews = buyers
         .map((b) => ({ buyerName: b.buyerName, ...entries[b.buyerName] }))
         .filter((r) => r.reason || r.remark || r.actionPlan || r.expectedOrder)
-      if (!reviews.length) { setError("Kam se kam ek buyer ka reason bharo."); setBusy(false); return }
+      if (!reviews.length) { setError("Please fill at least one buyer's reason."); setBusy(false); return }
       const res = await fetch(`/api/coord-review/${token}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reviews }),
       })
       const d = await res.json()
-      if (!res.ok) { setError(d.error || "Submit fail hua. Dobara try karo."); setBusy(false); return }
+      if (!res.ok) { setError(d.error || "Submit failed. Please try again."); setBusy(false); return }
       setDone(true)
-    } catch { setError("Network error. Dobara try karo.") }
+    } catch { setError("Network error. Please try again.") }
     finally { setBusy(false) }
   }
 
@@ -56,8 +56,8 @@ export function CoordReviewClient({
       <Shell coordinator={coordinator} week={week} fy={fy}>
         <div className="bg-white rounded-2xl border border-green-200 p-8 text-center space-y-3">
           <div className="w-14 h-14 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-2xl mx-auto">✓</div>
-          <h2 className="text-lg font-bold text-gray-900">Review submit ho gaya!</h2>
-          <p className="text-sm text-gray-600">Shukriya {coordinator}. Aapke reasons manager ke paas pahunch gaye. Ab is hafte ke reminder band ho jayenge.</p>
+          <h2 className="text-lg font-bold text-gray-900">Review submitted!</h2>
+          <p className="text-sm text-gray-600">Thank you, {coordinator}. Your reasons have reached the manager. This week&apos;s reminders will now stop.</p>
         </div>
       </Shell>
     )
@@ -67,18 +67,18 @@ export function CoordReviewClient({
     <Shell coordinator={coordinator} week={week} fy={fy}>
       {alreadySubmitted && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-2">
-          Aap is hafte pehle bhar chuke ho — dobara bharoge to update ho jayega.
+          You have already submitted this week — submitting again will update it.
         </div>
       )}
 
       {buyers.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center text-gray-600">
-          🎉 Is hafte aapke saare buyers theek hain — koi review pending nahi.
+          🎉 All your buyers are on track this week — no review pending.
         </div>
       ) : (
         <>
           <p className="text-sm text-gray-600">
-            Neeche <b>{buyers.length}</b> buyers ke orders nahi aa rahe / bahut kam hain. Har ek ka reason & next step bharo.
+            The <b>{buyers.length}</b> buyers below have no orders / very low orders this year. Please fill a reason & next step for each.
           </p>
 
           <div className="space-y-4">
@@ -100,17 +100,17 @@ export function CoordReviewClient({
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2 text-xs">
                       <Stat label="Target" value={String(b.target)} />
-                      <Stat label="Ab tak" value={`${b.actual} (${b.achievementPct}%)`} danger={b.actual === 0} />
+                      <Stat label="So far" value={`${b.actual} (${b.achievementPct}%)`} danger={b.actual === 0} />
                       <Stat label="Last year" value={String(b.lastYear)} />
                       <Stat label="Last order" value={b.lastOrderDate || "—"} />
-                      <Stat label="Kitne din" value={b.daysSinceOrder != null ? `${b.daysSinceOrder}d` : "—"} />
+                      <Stat label="Days since" value={b.daysSinceOrder != null ? `${b.daysSinceOrder}d` : "—"} />
                     </div>
                   </div>
 
                   {/* Inputs */}
                   <div className="p-4 grid gap-3 sm:grid-cols-2">
                     <label className="text-sm">
-                      <span className="block text-xs font-semibold text-gray-600 mb-1">Reason (order kyun nahi)</span>
+                      <span className="block text-xs font-semibold text-gray-600 mb-1">Reason (why no order)</span>
                       <select value={e.reason} onChange={(ev) => set(b.buyerName, "reason", ev.target.value)}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                         <option value="">— select —</option>
@@ -128,13 +128,13 @@ export function CoordReviewClient({
                     <label className="text-sm sm:col-span-2">
                       <span className="block text-xs font-semibold text-gray-600 mb-1">Remark (detail)</span>
                       <input value={e.remark} onChange={(ev) => set(b.buyerName, "remark", ev.target.value)}
-                        placeholder="e.g. buyer ne bola rate zyada hai"
+                        placeholder="e.g. buyer said the price is too high"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </label>
                     <label className="text-sm sm:col-span-2">
                       <span className="block text-xs font-semibold text-gray-600 mb-1">Action plan / next step</span>
                       <input value={e.actionPlan} onChange={(ev) => set(b.buyerName, "actionPlan", ev.target.value)}
-                        placeholder="e.g. naya rate bhejenge, sample offer karenge"
+                        placeholder="e.g. will send a new price, offer a sample"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </label>
                   </div>
@@ -150,7 +150,7 @@ export function CoordReviewClient({
               className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40">
               {busy
                 ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Submitting…</>
-                : <>Submit Review ({filledCount}/{buyers.length} bhare)</>}
+                : <>Submit Review ({filledCount}/{buyers.length} filled)</>}
             </button>
           </div>
         </>

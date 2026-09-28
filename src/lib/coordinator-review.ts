@@ -171,8 +171,8 @@ export async function sendCoordinatorReviewEmail(
     <div style="border:1px solid #e5e7eb;border-top:0;border-radius:0 0 10px 10px;padding:20px">
       <p style="margin:0 0 6px">Hi <b>${esc(g.coordinator)}</b>,</p>
       <p style="margin:0 0 14px;color:#374151;font-size:14px">
-        In neeche diye <b>${g.buyers.length}</b> buyers ke orders is saal <b>nahi aa rahe / bahut kam</b> hain.
-        Har buyer ka <b>reason</b> aur <b>next step</b> bhar do — ye director sir ke Friday review mein jaata hai.
+        The <b>${g.buyers.length}</b> buyers below have <b>no orders / very low orders</b> this year.
+        Please fill a <b>reason</b> and <b>next step</b> for each — this goes into the director's Friday review.
       </p>
       <div style="text-align:center;margin:18px 0">
         <a href="${url}" style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;font-size:15px;display:inline-block">📝 Fill Review (no login)</a>
@@ -191,8 +191,8 @@ export async function sendCoordinatorReviewEmail(
         </thead>
         <tbody>${rows}</tbody>
       </table>
-      ${g.buyers.length > 40 ? `<p style="color:#6b7280;font-size:12px;margin-top:8px">+${g.buyers.length - 40} more — poori list link par khulegi.</p>` : ""}
-      <p style="color:#9ca3af;font-size:12px;margin-top:16px">Link personal hai — kisi ko forward mat karo. Bhar ke submit karte hi ye reminder band ho jayega.</p>
+      ${g.buyers.length > 40 ? `<p style="color:#6b7280;font-size:12px;margin-top:8px">+${g.buyers.length - 40} more — open the link for the full list.</p>` : ""}
+      <p style="color:#9ca3af;font-size:12px;margin-top:16px">This link is personal — please don't forward it. Once you submit, these reminders will stop.</p>
     </div>
   </div>`
 
