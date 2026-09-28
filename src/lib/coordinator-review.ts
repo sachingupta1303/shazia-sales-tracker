@@ -217,7 +217,10 @@ export async function sendPendingCoordinatorReviewReminders(
   const submitted    = await getSubmittedCoordinators(fy, week)
   const todayISO     = todayIST(now)
   const todaysAlerts = await getAlertLogRows(todayISO)
-  const sentToday    = new Set(todaysAlerts.filter((a) => a.meetingId === "COORD_REVIEW").map((a) => a.emailTo))
+  // Only a SUCCESSFUL send blocks a re-send today — a failed attempt must retry.
+  const sentToday    = new Set(
+    todaysAlerts.filter((a) => a.meetingId === "COORD_REVIEW" && a.status === "SENT").map((a) => a.emailTo)
+  )
 
   let sent = 0, skipped = 0, failed = 0, pending = 0
   for (const g of groups) {
