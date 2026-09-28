@@ -145,7 +145,10 @@ export function CoordReviewClient({
 
           {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-2">{error}</div>}
 
-          <div className="sticky bottom-0 bg-gray-50 py-3">
+          <div className="pt-2 pb-8">
+            <p className="text-center text-xs text-gray-400 mb-2">
+              That&apos;s all {buyers.length} buyers. You can fill only the ones you know — the rest can stay blank.
+            </p>
             <button onClick={submit} disabled={busy || filledCount === 0}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40">
               {busy
