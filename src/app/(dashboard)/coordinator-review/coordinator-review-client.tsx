@@ -24,6 +24,8 @@ export function CoordinatorReviewClient() {
   const [loading, setLoad] = useState(true)
   const [error, setError] = useState("")
   const [sending, setSending] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testEmail, setTestEmail] = useState("research@shaziarice.com")
   const [pdfBusy, setPdfBusy] = useState(false)
   const [msg, setMsg]     = useState("")
   const [open, setOpen]   = useState<string | null>(null)
@@ -51,6 +53,20 @@ export function CoordinatorReviewClient() {
       load()
     } catch { setMsg("Send failed") }
     finally { setSending(false) }
+  }
+
+  const sendTest = async () => {
+    setTesting(true); setMsg("")
+    try {
+      const res = await fetch("/api/coordinator-review", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "test", testEmail }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d.ok) { setMsg(`Test email fail: ${d.reason || d.error || "unknown"}`); return }
+      setMsg(`✓ Test email bhej diya → ${d.to} (${d.coordinator} · ${d.count} buyers). Inbox check karo.`)
+    } catch { setMsg("Test email fail hua") }
+    finally { setTesting(false) }
   }
 
   const copyLink = async (c: CoordRow) => {
@@ -96,6 +112,18 @@ export function CoordinatorReviewClient() {
           </button>
         </div>
       </div>
+      {/* Test send — try the flow yourself before real coordinators get it */}
+      <div className="flex items-center gap-2 flex-wrap bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+        <span className="text-xs font-semibold text-blue-800">🧪 Test:</span>
+        <input value={testEmail} onChange={(e) => setTestEmail(e.target.value)}
+          className="text-sm border border-blue-200 rounded-lg px-3 py-1.5 w-56 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <button onClick={sendTest} disabled={testing}
+          className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40">
+          {testing ? "Sending…" : "Send test email"}
+        </button>
+        <span className="text-xs text-blue-700/70">— ek coordinator ka sample email is address par (real coordinators ko nahi)</span>
+      </div>
+
       {msg && <div className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-xl px-4 py-2">{msg}</div>}
 
       {/* Coordinator cards */}

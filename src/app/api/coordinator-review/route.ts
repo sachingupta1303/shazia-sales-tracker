@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { getCurrentFY, getCurrentFYWeek } from "@/lib/fy-utils"
 import {
   getRiskBuyersByCoordinator, signReviewToken,
-  sendPendingCoordinatorReviewReminders,
+  sendPendingCoordinatorReviewReminders, sendCoordinatorReviewEmail,
 } from "@/lib/coordinator-review"
 import { getCoordinatorReviews } from "@/lib/data"
 import { APP_BASE_URL } from "@/lib/mailer"
@@ -58,12 +58,37 @@ export async function GET() {
   return NextResponse.json({ fy, week, coordinators, reviews: dedupReviews })
 }
 
-// POST — manually trigger sending review links to pending coordinators now
-export async function POST() {
-  const session = await auth()
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if ((session.user as AppUser).role === "SALES_PERSON")
-    return NextResponse.json({ error: "Access denied" }, { status: 403 })
+// POST — send review links.
+//   { mode: "test", testEmail?, coordinator? } → send ONE coordinator's email to a
+//        test inbox (default research@shaziarice.com) without touching real coordinators.
+//   (no body) → send to all pending coordinators now.
+// Auth: manager session, OR Bearer CRON_SECRET (so it can be triggered server-side).
+export async function POST(req: Request) {
+  const bearer = req.headers.get("authorization") || ""
+  const cronOk = !!process.env.CRON_SECRET && bearer === `Bearer ${process.env.CRON_SECRET}`
+  if (!cronOk) {
+    const session = await auth()
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if ((session.user as AppUser).role === "SALES_PERSON")
+      return NextResponse.json({ error: "Access denied" }, { status: 403 })
+  }
+
+  let body: { mode?: string; testEmail?: string; coordinator?: string } = {}
+  try { body = await req.json() } catch { /* no body → send-to-pending */ }
+
+  if (body.mode === "test") {
+    const fy = getCurrentFY(); const week = getCurrentFYWeek()
+    const groups = await getRiskBuyersByCoordinator(fy)
+    const g = body.coordinator
+      ? groups.find((x) => x.coordinator.toLowerCase() === String(body.coordinator).toLowerCase())
+      : groups[0]
+    if (!g) return NextResponse.json({ error: "No coordinator with risk buyers" }, { status: 400 })
+    const to = (body.testEmail && String(body.testEmail).includes("@")) ? String(body.testEmail).trim() : "research@shaziarice.com"
+    const token = signReviewToken({ coordinator: g.coordinator, fyWeek: week, fy })
+    const url   = `${APP_BASE_URL}/coord-review/${token}`
+    const res   = await sendCoordinatorReviewEmail({ ...g, email: to }, url, week, fy)
+    return NextResponse.json({ ok: res.ok, test: true, to, coordinator: g.coordinator, count: g.buyers.length, reason: res.reason })
+  }
 
   const result = await sendPendingCoordinatorReviewReminders()
   return NextResponse.json({ ok: true, ...result })
