@@ -43,6 +43,8 @@ export const SHEET_NAMES = {
   MEETING_DONE_TOKENS:    "MEETING_DONE_TOKENS",
   // Weekly coordinator review — reasons for good buyers with no / low orders
   COORDINATOR_REVIEW:     "COORDINATOR_REVIEW",
+  // Manual buyer merges — a renamed/rebranded buyer → the established buyer's code
+  BUYER_MERGES:           "BUYER_MERGES",
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

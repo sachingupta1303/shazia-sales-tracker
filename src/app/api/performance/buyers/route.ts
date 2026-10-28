@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster, getCanonicalBuyers,
-  filterPIByFY, getBuyerAliasMap, get8020Buyers, sumContainers,
+  filterPIByFY, getBuyerAliasMap, get8020Buyers, sumContainers, getBuyerMerges,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -57,13 +57,14 @@ export async function GET(req: Request) {
         ? user.salesPersonName
         : spFilter
 
-    const [allPI, targets, buyerMaster, canonical, aliasMap, buyers8020] = await Promise.all([
+    const [allPI, targets, buyerMaster, canonical, aliasMap, buyers8020, buyerMerges] = await Promise.all([
       getPIRecords(),
       getTargetRecords(fy),
       getBuyerMaster(),
       getCanonicalBuyers(),
       getBuyerAliasMap(),
       get8020Buyers(),
+      getBuyerMerges(),
     ])
 
     // Tier + coordinator maps from "80/20 Buyers" sheet — name → tier / coordinator
@@ -133,6 +134,11 @@ export async function GET(req: Request) {
         const t = nameToks(name)
         if (t.length >= 3) { for (const p of priorNameToks) if (prefixSame(t, p)) return true }
       }
+      // Manual merge: a human-verified rename → treat as the established buyer.
+      // The renamed buyer is "returning" only if its canonical buyer actually has
+      // prior-year history (so an accidental merge can't hide a genuinely new buyer).
+      const canonCode = name ? buyerMerges.get(name.toUpperCase()) : undefined
+      if (canonCode && priorBuyerKeys.has(canonCode)) return true
       return false
     }
 

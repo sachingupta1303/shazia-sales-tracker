@@ -356,6 +356,35 @@ export async function getBuyerAliasMap(): Promise<Map<string, string>> {
   }, LONG_TTL)
 }
 
+/**
+ * Manual buyer merges (human-verified). A renamed / rebranded buyer whose new
+ * name the auto-matcher can't link to the old one. Sheet BUYER_MERGES columns:
+ *   Alias Name | Canonical Code | Note
+ * Returns Map<aliasNameUpper, canonicalCodeUpper>. Used by New Business to treat
+ * the renamed buyer as a returning one (merged into the established buyer).
+ */
+const BUYER_MERGE_HEADERS = ["Alias Name", "Canonical Code", "Note"]
+export async function getBuyerMerges(): Promise<Map<string, string>> {
+  return withMemo("buyer_merges", async () => {
+    const map = new Map<string, string>()
+    try {
+      await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.BUYER_MERGES, BUYER_MERGE_HEADERS)
+      const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.BUYER_MERGES)
+      if (!rows.length) return map
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
+      for (const r of dataRows) {
+        const alias = getCell(r, h, "Alias Name") || getCell(r, h, "aliasName")
+        const canon = getCell(r, h, "Canonical Code") || getCell(r, h, "canonicalCode")
+        if (alias && canon) map.set(alias.toUpperCase().trim(), canon.toUpperCase().trim())
+      }
+    } catch (e) {
+      console.warn("Buyer Merges fetch warning:", e)
+    }
+    return map
+  }, LONG_TTL)
+}
+
 // ─── Country Strategies ───────────────────────────────────────────────────────
 
 export async function getCountryStrategies(): Promise<CountryStrategy[]> {
