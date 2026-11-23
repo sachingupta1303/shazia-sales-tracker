@@ -1,8 +1,8 @@
 import { auth } from "@/lib/auth"
 import { NextResponse } from "next/server"
 import {
-  getPIRecords, getTargetRecords, getLeadActivities,
-  filterPIByFY, sumContainers, groupBySalesPerson,
+  getPIRecords, getTargetRecords, getLeadActivities, getBuyerMaster,
+  filterPIByFY, sumContainers, buildOwnerResolver,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -58,23 +58,36 @@ export async function GET(req: Request) {
         return true
       })
 
-    const [allPI, targets, allActivities] = await Promise.all([
+    const [allPI, targets, allActivities, buyerMaster] = await Promise.all([
       getPIRecords(),
       getTargetRecords(fy),
       getLeadActivities({ limit: 5000 }),
+      getBuyerMaster(),
     ])
 
     const currentPI  = filterRecords(filterPIByFY(allPI, fy))
     const previousPI = filterRecords(filterPIByFY(allPI, prevFY))
 
-    const currentBySP  = groupBySalesPerson(currentPI)
-    const previousBySP = groupBySalesPerson(previousPI)
+    // RESPONSIBLE PERSON view: every order is credited to the buyer's owner (the
+    // responsible person on its 80/20 / target row, which may be a combined
+    // "A/B" name), so target and actual line up per owner. Buyers with no target
+    // fall back to the PI's own Sales Person. For orders by the person who
+    // actually booked the PI, see /api/performance/pi-salesperson.
+    const ownerOf = buildOwnerResolver(targets, buyerMaster)
+    const groupByOwner = (records: PIRecord[]) =>
+      records.reduce((acc, r) => {
+        const key = (ownerOf(r) || "").toUpperCase().trim()
+        ;(acc[key] ??= []).push(r)
+        return acc
+      }, {} as Record<string, PIRecord[]>)
+    const currentBySP  = groupByOwner(currentPI)
+    const previousBySP = groupByOwner(previousPI)
 
     // Aggregate targets by SP (apply country filter if present)
     const targetBySP: Record<string, number> = {}
     targets.forEach((t) => {
       if (country && t.countries.toUpperCase() !== country.toUpperCase()) return
-      const sp = t.salesPerson.toUpperCase()
+      const sp = t.salesPerson.toUpperCase().trim()
       targetBySP[sp] = (targetBySP[sp] || 0) + t.currentYearTargetContainers
     })
 

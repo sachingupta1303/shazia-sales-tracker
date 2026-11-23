@@ -38,7 +38,7 @@ function StatusBadge3({ row }: { row: { target: number; achievementPercent: numb
   return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ST3_STYLE[s]}`}>{ST3_LABEL[s]}</span>
 }
 
-type Tab = "country" | "buyer" | "salesperson" | "coordinator" | "newbusiness"
+type Tab = "country" | "buyer" | "salesperson" | "pisales" | "coordinator" | "newbusiness"
 
 interface Props { userRole?: UserRole; salesPerson?: string }
 
@@ -842,6 +842,181 @@ function MobilePerformanceCard({
   )
 }
 
+
+// ── Actual Sales Person Table (PI_BACKEND_MASTER "Sales Person") ──────────────
+//   Orders credited to whoever booked the PI. Click a row to see NBD vs CRR,
+//   country-wise and buyer-wise breakdown for that person.
+type PISalesRow = SalesPersonPerformance & {
+  pis: number; mts: number
+  nbdPIs: number; nbdCtrs: number; nbdBuyers: number
+  crrPIs: number; crrCtrs: number; crrBuyers: number
+  countries: { country: string; pis: number; ctrs: number; mts: number; nbdCtrs: number; crrCtrs: number; buyers: number }[]
+  buyers: { buyer: string; country: string; pis: number; ctrs: number; isNew: boolean }[]
+}
+
+function PISalesDetail({ r }: { r: PISalesRow }) {
+  const [showAllBuyers, setShowAllBuyers] = useState(false)
+  const buyers = showAllBuyers ? r.buyers : r.buyers.slice(0, 10)
+  const box = "rounded-lg border px-3 py-2"
+  return (
+    <div className="bg-gray-50 px-6 py-4 space-y-4 text-xs">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className={`${box} bg-white border-gray-200`}>
+          <p className="text-gray-400 uppercase font-semibold tracking-wide">Total</p>
+          <p className="text-lg font-black text-gray-900">{formatNumber(r.actual)} <span className="text-xs font-medium text-gray-500">ctrs</span></p>
+          <p className="text-gray-500">{r.pis} PIs · {formatNumber(r.mts, 0)} MT · {r.activeBuyers} buyers</p>
+        </div>
+        <div className={`${box} bg-green-50 border-green-200`}>
+          <p className="text-green-700 uppercase font-semibold tracking-wide">NBD (new buyers)</p>
+          <p className="text-lg font-black text-green-800">{formatNumber(r.nbdCtrs)} <span className="text-xs font-medium">ctrs</span></p>
+          <p className="text-green-700">{r.nbdPIs} PIs · {r.nbdBuyers} buyers</p>
+        </div>
+        <div className={`${box} bg-blue-50 border-blue-200`}>
+          <p className="text-blue-700 uppercase font-semibold tracking-wide">CRR (repeat buyers)</p>
+          <p className="text-lg font-black text-blue-800">{formatNumber(r.crrCtrs)} <span className="text-xs font-medium">ctrs</span></p>
+          <p className="text-blue-700">{r.crrPIs} PIs · {r.crrBuyers} buyers</p>
+        </div>
+        <div className={`${box} bg-white border-gray-200`}>
+          <p className="text-gray-400 uppercase font-semibold tracking-wide">Countries</p>
+          <p className="text-lg font-black text-gray-900">{r.countries.length}</p>
+          <p className="text-gray-500">Prev year: {formatNumber(r.previousYear)} ctrs</p>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <p className="px-3 py-2 font-semibold text-gray-700 border-b border-gray-100">Country-wise</p>
+          <table className="w-full">
+            <thead><tr className="text-gray-500 uppercase bg-gray-50">
+              <th className="text-left px-3 py-1.5">Country</th><th className="px-2 py-1.5">PIs</th>
+              <th className="px-2 py-1.5">Buyers</th><th className="px-2 py-1.5">NBD</th>
+              <th className="px-2 py-1.5">CRR</th><th className="px-2 py-1.5">Total Ctrs</th>
+            </tr></thead>
+            <tbody className="divide-y divide-gray-50">
+              {r.countries.map((c) => (
+                <tr key={c.country}>
+                  <td className="px-3 py-1.5 font-medium text-gray-800">{c.country}</td>
+                  <td className="px-2 py-1.5 text-center tabular-nums">{c.pis}</td>
+                  <td className="px-2 py-1.5 text-center tabular-nums">{c.buyers}</td>
+                  <td className="px-2 py-1.5 text-center tabular-nums text-green-700">{formatNumber(c.nbdCtrs)}</td>
+                  <td className="px-2 py-1.5 text-center tabular-nums text-blue-700">{formatNumber(c.crrCtrs)}</td>
+                  <td className="px-2 py-1.5 text-center tabular-nums font-bold">{formatNumber(c.ctrs)}</td>
+                </tr>
+              ))}
+              {r.countries.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-center text-gray-400">No orders in this period</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <p className="px-3 py-2 font-semibold text-gray-700 border-b border-gray-100">Buyer-wise</p>
+          <table className="w-full">
+            <thead><tr className="text-gray-500 uppercase bg-gray-50">
+              <th className="text-left px-3 py-1.5">Buyer</th><th className="text-left px-2 py-1.5">Country</th>
+              <th className="px-2 py-1.5">Type</th><th className="px-2 py-1.5">PIs</th><th className="px-2 py-1.5">Ctrs</th>
+            </tr></thead>
+            <tbody className="divide-y divide-gray-50">
+              {buyers.map((b, i) => (
+                <tr key={`${b.buyer}-${i}`}>
+                  <td className="px-3 py-1.5 text-gray-800">{b.buyer}</td>
+                  <td className="px-2 py-1.5 text-gray-500">{b.country}</td>
+                  <td className="px-2 py-1.5 text-center">
+                    <span className={`px-1.5 py-0.5 rounded font-semibold ${b.isNew ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{b.isNew ? "NBD" : "CRR"}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-center tabular-nums">{b.pis}</td>
+                  <td className="px-2 py-1.5 text-center tabular-nums font-bold">{formatNumber(b.ctrs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {r.buyers.length > 10 && (
+            <button onClick={() => setShowAllBuyers((v) => !v)} className="w-full py-1.5 text-green-700 font-medium hover:bg-green-50 border-t border-gray-100">
+              {showAllBuyers ? "Show top 10" : `Show all ${r.buyers.length} buyers`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PISalesTable({ rows, week }: { rows: PISalesRow[]; week: number }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const totalGap = sumField(rows, "gap")
+  const th = "text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-100">
+            <th className={`${th} w-10`}>#</th>
+            <th className={`${th} !text-left`}>Sales Person (PI)</th>
+            <th className={th}>Prev Year</th>
+            <th className={th}>Target</th>
+            <th className={th}>Due W{week}</th>
+            <th className={th}>Actual</th>
+            <th className={th}>Gap</th>
+            <th className={th}>Achievement</th>
+            <th className={th}>NBD Ctrs</th>
+            <th className={th}>CRR Ctrs</th>
+            <th className={th}>PIs</th>
+            <th className={th}>Countries</th>
+            <th className={th}>Status</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {rows.map((r, i) => (
+            <Fragment key={r.salesPerson}>
+              <tr className="hover:bg-green-50 transition-colors cursor-pointer group" onClick={() => setOpen(open === r.salesPerson ? null : r.salesPerson)}>
+                <td className="px-3 py-3 text-gray-400 tabular-nums text-center">{i + 1}</td>
+                <td className="px-3 py-3 font-bold text-gray-800 group-hover:text-green-700 whitespace-nowrap">
+                  <span className="text-gray-400 mr-1">{open === r.salesPerson ? "▾" : "▸"}</span>{r.salesPerson}
+                </td>
+                <td className="px-3 py-3 text-gray-500 tabular-nums text-center">{formatNumber(r.previousYear)}</td>
+                <td className="px-3 py-3 text-gray-800 tabular-nums text-center font-bold">{formatNumber(r.target, 0)}</td>
+                <td className="px-3 py-3 text-gray-600 tabular-nums text-center">{formatNumber(r.targetDue)}</td>
+                <td className="px-3 py-3 font-black text-gray-900 tabular-nums text-center">{formatNumber(r.actual)}</td>
+                <td className="px-3 py-3 text-center"><GapCell gap={r.gap} /></td>
+                <td className="px-3 py-3 min-w-[120px]"><AchievementBar pct={r.achievementPercent} status={r.status} /></td>
+                <td className="px-3 py-3 text-center tabular-nums text-green-700 font-semibold">{formatNumber(r.nbdCtrs)}</td>
+                <td className="px-3 py-3 text-center tabular-nums text-blue-700 font-semibold">{formatNumber(r.crrCtrs)}</td>
+                <td className="px-3 py-3 text-center tabular-nums text-gray-600">{r.pis}</td>
+                <td className="px-3 py-3 text-center tabular-nums text-gray-600">{r.countries.length}</td>
+                <td className="px-3 py-3 text-center"><StatusBadge status={r.status} /></td>
+              </tr>
+              {open === r.salesPerson && (
+                <tr><td colSpan={13} className="p-0"><PISalesDetail r={r} /></td></tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+        {rows.length > 0 && (
+          <tfoot>
+            <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+              <td />
+              <td className="px-3 py-3 text-gray-800 uppercase text-xs tracking-wide">Grand Total</td>
+              <td className="px-3 py-3 text-center tabular-nums">{formatNumber(sumField(rows, "previousYear"))}</td>
+              <td className="px-3 py-3 text-center tabular-nums">{formatNumber(sumField(rows, "target"), 0)}</td>
+              <td className="px-3 py-3 text-center tabular-nums">{formatNumber(sumField(rows, "targetDue"))}</td>
+              <td className="px-3 py-3 text-center tabular-nums">{formatNumber(sumField(rows, "actual"))}</td>
+              <td className={`px-3 py-3 text-center tabular-nums ${totalGap >= 0 ? "text-green-700" : "text-red-700"}`}>{(totalGap >= 0 ? "+" : "") + formatNumber(totalGap)}</td>
+              <td />
+              <td className="px-3 py-3 text-center tabular-nums text-green-700">{formatNumber(sumField(rows, "nbdCtrs"))}</td>
+              <td className="px-3 py-3 text-center tabular-nums text-blue-700">{formatNumber(sumField(rows, "crrCtrs"))}</td>
+              <td className="px-3 py-3 text-center tabular-nums">{sumField(rows, "pis")}</td>
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
+        )}
+      </table>
+      <p className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
+        Actual = orders by the Sales Person written on each PI (PI_BACKEND_MASTER). Target = 80/20 sheet; a target shared by two people (e.g. ATIF/MOHIT GUPTA) is split equally.
+        NBD = buyer&apos;s first-ever order is in this FY · CRR = repeat buyer. Click a row for country &amp; buyer details.
+      </p>
+    </div>
+  )
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export function TargetsClient({ userRole, salesPerson }: Props) {
   const [tab,      setTab]     = useState<Tab>("country")
@@ -856,6 +1031,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const [buyerData,   setBuyerData]   = useState<{ rows: BuyerPerformance[];   summary: any; meta: any } | null>(null)
   const [spData,      setSPData]      = useState<{ rows: SalesPersonPerformance[]; meta: any } | null>(null)
   const [coordData,   setCoordData]   = useState<{ rows: SalesPersonPerformance[]; meta: any } | null>(null)
+  const [piSpData,    setPISpData]    = useState<{ rows: PISalesRow[]; meta: any } | null>(null)
 
   const isSP = userRole === "SALES_PERSON"
 
@@ -923,6 +1099,11 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         const res = await fetch(`/api/performance/salesperson?${qs}`)
         const d   = await res.json()
         setSPData(d)
+      } else if (t === "pisales") {
+        const res = await fetch(`/api/performance/pi-salesperson?${qs}`)
+        const d   = await res.json()
+        if (!res.ok) throw new Error(d?.error)
+        setPISpData(d)
       } else {
         const res = await fetch(`/api/performance/salescoordinator?${qs}`)
         const d   = await res.json()
@@ -934,7 +1115,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
 
   useEffect(() => { fetchTab(tab, filters) }, [tab, filters, fetchTab])
 
-  const week = countryData?.meta?.week ?? buyerData?.meta?.week ?? spData?.meta?.week ?? coordData?.meta?.week ?? 6
+  const week = countryData?.meta?.week ?? buyerData?.meta?.week ?? spData?.meta?.week ?? piSpData?.meta?.week ?? coordData?.meta?.week ?? 6
 
   // Client-side search (buyer / country / person name)
   const q = (filters.search || "").toLowerCase().trim()
@@ -949,6 +1130,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
   const countryRows = (countryData?.rows ?? []).filter((r) => matchQ(r.country))
   const spRows      = (spData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
   const coordRows   = (coordData?.rows ?? []).filter((r) => matchQ((r as any).salesPerson))
+  const piSpRows    = (piSpData?.rows ?? []).filter((r) => matchQ(r.salesPerson))
 
   // New Business — genuinely NEW: placed their FIRST-EVER order this FY, i.e. no
   // orders in ANY earlier financial year (full history, not just last year).
@@ -1003,7 +1185,10 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         <TabBtn active={tab === "country"}    onClick={() => setTab("country")}>🌍 By Country</TabBtn>
         <TabBtn active={tab === "buyer"}      onClick={() => setTab("buyer")}>👤 By Buyer</TabBtn>
         {!isSP && (
-          <TabBtn active={tab === "salesperson"} onClick={() => setTab("salesperson")}>👥 By Sales Person</TabBtn>
+          <TabBtn active={tab === "salesperson"} onClick={() => setTab("salesperson")}>👥 By Responsible Person</TabBtn>
+        )}
+        {!isSP && (
+          <TabBtn active={tab === "pisales"} onClick={() => setTab("pisales")}>🧾 By Sales Person</TabBtn>
         )}
         {!isSP && (
           <TabBtn active={tab === "coordinator"} onClick={() => setTab("coordinator")}>📋 By Sales Coordinator</TabBtn>
@@ -1019,7 +1204,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
         showSearch={true}
         showFY={true}
         showVariety={false}
-        showSP={!isSP && tab !== "salesperson" && tab !== "coordinator"}
+        showSP={!isSP && tab !== "salesperson" && tab !== "pisales" && tab !== "coordinator"}
         showCoordinator={tab === "buyer"}
       />
 
@@ -1086,7 +1271,8 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
             {loading ? "Loading…" : (
               tab === "country"     ? `${countryRows.length} countries` :
               tab === "buyer"       ? `${filteredBuyerRows.length} buyers`    :
-              tab === "salesperson" ? `${spRows.length} sales persons` :
+              tab === "salesperson" ? `${spRows.length} responsible persons` :
+              tab === "pisales"     ? `${piSpRows.length} sales persons (as per PI data)` :
               tab === "newbusiness" ? `${newBuyerRows.length} new buyers · ${newCountryRows.length} new countries` :
                                       `${coordRows.length} sales coordinators`
             )}
@@ -1099,7 +1285,8 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
           <>
             {tab === "country"    && countryData && <div className="hidden md:block"><CountryTable rows={countryRows} week={week} /></div>}
             {tab === "buyer"      && buyerData   && <div className="hidden md:block"><BuyerTable   rows={filteredBuyerRows} week={week} showSP={!isSP} /></div>}
-            {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} /></div>}
+            {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} nameLabel="Responsible Person" /></div>}
+            {tab === "pisales"    && piSpData     && <PISalesTable rows={piSpRows} week={week} />}
             {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordRows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
             {tab === "newbusiness"&& buyerData && countryData && (
               <NewBusinessView newBuyerRows={newBuyerRows} newCountryRows={newCountryRows} showSP={!isSP} fyLabel={fyLabel} periodLabel={periodLabel} />
