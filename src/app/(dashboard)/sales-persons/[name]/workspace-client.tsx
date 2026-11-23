@@ -18,10 +18,17 @@ interface BuyerRow {
   name: string; code: string; actual: number; target: number
   segment: BuyerSegment; isKeyAccount: boolean; country: string
   tier: BuyerTier; achievementPct: number; status: PerformanceStatus
+  pis?: number; isNew?: boolean
 }
 interface CountryRow {
   country: string; actual: number; target: number
   achievementPct: number; status: PerformanceStatus
+  nbd?: number; crr?: number; pis?: number; buyers?: number
+}
+interface OrderMix {
+  pis: number; mts: number; countries: number
+  nbdCtrs: number; nbdPIs: number; nbdBuyers: number
+  crrCtrs: number; crrPIs: number; crrBuyers: number
 }
 interface SalesPersonData {
   salesPerson: {
@@ -35,6 +42,7 @@ interface SalesPersonData {
     totalBuyers: number
     tier1Count: number; tier2Count: number; tier3Count: number; othersCount: number
   }
+  mix?: OrderMix
   buyers: BuyerRow[]
   countries: CountryRow[]
   piHistory: PIRecord[]
@@ -151,6 +159,7 @@ function BuyersTab({ buyers, week }: { buyers: BuyerRow[]; week: number }) {
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Country</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Tier</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Segment</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">NBD / CRR</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Target</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actual</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[130px]">Achievement</th>
@@ -191,6 +200,13 @@ function BuyersTab({ buyers, week }: { buyers: BuyerRow[]; week: number }) {
                     "bg-gray-100 text-gray-600"
                   }`}>{b.segment}</span>
                 </td>
+                <td className="px-4 py-3 text-center">
+                  {b.actual > 0 ? (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${b.isNew ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+                      {b.isNew ? "NBD" : "CRR"}
+                    </span>
+                  ) : <span className="text-xs text-gray-300">—</span>}
+                </td>
                 <td className="px-4 py-3 text-center tabular-nums text-gray-500 text-sm">{formatNumber(b.target, 0)}</td>
                 <td className="px-4 py-3 text-center tabular-nums font-bold text-gray-900 text-sm">{formatNumber(b.actual)}</td>
                 <td className="px-4 py-3">
@@ -202,14 +218,14 @@ function BuyersTab({ buyers, week }: { buyers: BuyerRow[]; week: number }) {
               </tr>
             ))}
             {buyers.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400 text-sm">No buyers found</td></tr>
+              <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400 text-sm">No buyers found</td></tr>
             )}
           </tbody>
           {buyers.length > 0 && (
             <tfoot>
               <tr className="bg-gray-50 border-t-2 border-gray-200 font-bold text-sm">
                 <td className="px-4 py-3" />
-                <td className="px-4 py-3 text-gray-700 text-xs uppercase tracking-wide" colSpan={4}>
+                <td className="px-4 py-3 text-gray-700 text-xs uppercase tracking-wide" colSpan={5}>
                   Total ({buyers.length} buyers)
                 </td>
                 <td className="px-4 py-3 text-center tabular-nums text-gray-600">
@@ -306,6 +322,10 @@ function MarketTab({ countries }: { countries: CountryRow[] }) {
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Country</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Target</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actual</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">NBD</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">CRR</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">PIs</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Buyers</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[140px]">Achievement</th>
               <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
             </tr>
@@ -320,6 +340,10 @@ function MarketTab({ countries }: { countries: CountryRow[] }) {
                 <td className="px-4 py-3 font-semibold text-gray-800 text-sm hover:text-green-700">{c.country}</td>
                 <td className="px-4 py-3 text-center tabular-nums text-gray-500 text-sm font-medium">{formatNumber(c.target, 0)}</td>
                 <td className="px-4 py-3 text-center tabular-nums font-bold text-gray-900 text-sm">{formatNumber(c.actual)}</td>
+                <td className="px-4 py-3 text-center tabular-nums text-green-700 font-semibold text-sm">{formatNumber(c.nbd ?? 0)}</td>
+                <td className="px-4 py-3 text-center tabular-nums text-blue-700 font-semibold text-sm">{formatNumber(c.crr ?? 0)}</td>
+                <td className="px-4 py-3 text-center tabular-nums text-gray-600 text-sm">{c.pis ?? 0}</td>
+                <td className="px-4 py-3 text-center tabular-nums text-gray-600 text-sm">{c.buyers ?? 0}</td>
                 <td className="px-4 py-3">
                   <AchievementBar pct={c.achievementPct} status={c.status} />
                 </td>
@@ -329,7 +353,7 @@ function MarketTab({ countries }: { countries: CountryRow[] }) {
               </tr>
             ))}
             {countries.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400 text-sm">No country data found</td></tr>
+              <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400 text-sm">No country data found</td></tr>
             )}
           </tbody>
           {countries.length > 0 && (
@@ -343,6 +367,10 @@ function MarketTab({ countries }: { countries: CountryRow[] }) {
                 <td className="px-4 py-3 text-center tabular-nums text-gray-900">
                   {formatNumber(countries.reduce((s, c) => s + c.actual, 0))}
                 </td>
+                <td className="px-4 py-3 text-center tabular-nums text-green-700">{formatNumber(countries.reduce((s, c) => s + (c.nbd ?? 0), 0))}</td>
+                <td className="px-4 py-3 text-center tabular-nums text-blue-700">{formatNumber(countries.reduce((s, c) => s + (c.crr ?? 0), 0))}</td>
+                <td className="px-4 py-3 text-center tabular-nums text-gray-600">{countries.reduce((s, c) => s + (c.pis ?? 0), 0)}</td>
+                <td className="px-4 py-3 text-center tabular-nums text-gray-600">{countries.reduce((s, c) => s + (c.buyers ?? 0), 0)}</td>
                 <td colSpan={2} />
               </tr>
             </tfoot>
@@ -388,7 +416,7 @@ export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
     </div>
   )
 
-  const { salesPerson, summary, buyers, countries, piHistory, meta } = data
+  const { salesPerson, summary, buyers, countries, piHistory, meta, mix } = data
   const perf = salesPerson.performance
 
   const TABS = [
@@ -408,7 +436,7 @@ export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
         <div>
           <h1 className="text-2xl font-black text-gray-900">{salesPerson.name}</h1>
           <p className="text-sm text-gray-400 font-medium">
-            Sales Person Workspace · FY {meta.currentFY} · Week {meta.currentWeek}
+            Sales Person Workspace · FY {meta.currentFY} · Week {meta.currentWeek} · orders as per PI data
           </p>
         </div>
       </div>
@@ -425,6 +453,16 @@ export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
         </div>
         <KpiCard label="Prev Year"      value={formatNumber(perf.prevActual)}   sub="historical"               color="bg-gray-50 border-gray-200" />
       </div>
+
+      {/* Order mix — NBD (new buyers) vs CRR (repeat buyers), from PI data */}
+      {mix && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <KpiCard label="NBD · New Buyers"    value={formatNumber(mix.nbdCtrs)} sub={`${mix.nbdPIs} PIs · ${mix.nbdBuyers} buyers`} color="bg-green-50 border-green-200" />
+          <KpiCard label="CRR · Repeat Buyers" value={formatNumber(mix.crrCtrs)} sub={`${mix.crrPIs} PIs · ${mix.crrBuyers} buyers`} color="bg-blue-50 border-blue-200" />
+          <KpiCard label="Total Orders"        value={mix.pis}                    sub={`PIs · ${formatNumber(mix.mts, 0)} MT`}        color="bg-white border-gray-200" />
+          <KpiCard label="Countries"           value={mix.countries}              sub="with orders this FY"                         color="bg-white border-gray-200" />
+        </div>
+      )}
 
       {/* Tier Summary */}
       <TierCards summary={summary} />

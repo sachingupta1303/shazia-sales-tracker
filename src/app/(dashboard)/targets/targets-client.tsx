@@ -854,94 +854,8 @@ type PISalesRow = SalesPersonPerformance & {
   buyers: { buyer: string; country: string; pis: number; ctrs: number; isNew: boolean }[]
 }
 
-function PISalesDetail({ r }: { r: PISalesRow }) {
-  const [showAllBuyers, setShowAllBuyers] = useState(false)
-  const buyers = showAllBuyers ? r.buyers : r.buyers.slice(0, 10)
-  const box = "rounded-lg border px-3 py-2"
-  return (
-    <div className="bg-gray-50 px-6 py-4 space-y-4 text-xs">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className={`${box} bg-white border-gray-200`}>
-          <p className="text-gray-400 uppercase font-semibold tracking-wide">Total</p>
-          <p className="text-lg font-black text-gray-900">{formatNumber(r.actual)} <span className="text-xs font-medium text-gray-500">ctrs</span></p>
-          <p className="text-gray-500">{r.pis} PIs · {formatNumber(r.mts, 0)} MT · {r.activeBuyers} buyers</p>
-        </div>
-        <div className={`${box} bg-green-50 border-green-200`}>
-          <p className="text-green-700 uppercase font-semibold tracking-wide">NBD (new buyers)</p>
-          <p className="text-lg font-black text-green-800">{formatNumber(r.nbdCtrs)} <span className="text-xs font-medium">ctrs</span></p>
-          <p className="text-green-700">{r.nbdPIs} PIs · {r.nbdBuyers} buyers</p>
-        </div>
-        <div className={`${box} bg-blue-50 border-blue-200`}>
-          <p className="text-blue-700 uppercase font-semibold tracking-wide">CRR (repeat buyers)</p>
-          <p className="text-lg font-black text-blue-800">{formatNumber(r.crrCtrs)} <span className="text-xs font-medium">ctrs</span></p>
-          <p className="text-blue-700">{r.crrPIs} PIs · {r.crrBuyers} buyers</p>
-        </div>
-        <div className={`${box} bg-white border-gray-200`}>
-          <p className="text-gray-400 uppercase font-semibold tracking-wide">Countries</p>
-          <p className="text-lg font-black text-gray-900">{r.countries.length}</p>
-          <p className="text-gray-500">Prev year: {formatNumber(r.previousYear)} ctrs</p>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <p className="px-3 py-2 font-semibold text-gray-700 border-b border-gray-100">Country-wise</p>
-          <table className="w-full">
-            <thead><tr className="text-gray-500 uppercase bg-gray-50">
-              <th className="text-left px-3 py-1.5">Country</th><th className="px-2 py-1.5">PIs</th>
-              <th className="px-2 py-1.5">Buyers</th><th className="px-2 py-1.5">NBD</th>
-              <th className="px-2 py-1.5">CRR</th><th className="px-2 py-1.5">Total Ctrs</th>
-            </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              {r.countries.map((c) => (
-                <tr key={c.country}>
-                  <td className="px-3 py-1.5 font-medium text-gray-800">{c.country}</td>
-                  <td className="px-2 py-1.5 text-center tabular-nums">{c.pis}</td>
-                  <td className="px-2 py-1.5 text-center tabular-nums">{c.buyers}</td>
-                  <td className="px-2 py-1.5 text-center tabular-nums text-green-700">{formatNumber(c.nbdCtrs)}</td>
-                  <td className="px-2 py-1.5 text-center tabular-nums text-blue-700">{formatNumber(c.crrCtrs)}</td>
-                  <td className="px-2 py-1.5 text-center tabular-nums font-bold">{formatNumber(c.ctrs)}</td>
-                </tr>
-              ))}
-              {r.countries.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-center text-gray-400">No orders in this period</td></tr>}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <p className="px-3 py-2 font-semibold text-gray-700 border-b border-gray-100">Buyer-wise</p>
-          <table className="w-full">
-            <thead><tr className="text-gray-500 uppercase bg-gray-50">
-              <th className="text-left px-3 py-1.5">Buyer</th><th className="text-left px-2 py-1.5">Country</th>
-              <th className="px-2 py-1.5">Type</th><th className="px-2 py-1.5">PIs</th><th className="px-2 py-1.5">Ctrs</th>
-            </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              {buyers.map((b, i) => (
-                <tr key={`${b.buyer}-${i}`}>
-                  <td className="px-3 py-1.5 text-gray-800">{b.buyer}</td>
-                  <td className="px-2 py-1.5 text-gray-500">{b.country}</td>
-                  <td className="px-2 py-1.5 text-center">
-                    <span className={`px-1.5 py-0.5 rounded font-semibold ${b.isNew ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{b.isNew ? "NBD" : "CRR"}</span>
-                  </td>
-                  <td className="px-2 py-1.5 text-center tabular-nums">{b.pis}</td>
-                  <td className="px-2 py-1.5 text-center tabular-nums font-bold">{formatNumber(b.ctrs)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {r.buyers.length > 10 && (
-            <button onClick={() => setShowAllBuyers((v) => !v)} className="w-full py-1.5 text-green-700 font-medium hover:bg-green-50 border-t border-gray-100">
-              {showAllBuyers ? "Show top 10" : `Show all ${r.buyers.length} buyers`}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function PISalesTable({ rows, week }: { rows: PISalesRow[]; week: number }) {
-  const [open, setOpen] = useState<string | null>(null)
+  const router = useRouter()
   const totalGap = sumField(rows, "gap")
   const th = "text-center px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
   return (
@@ -966,11 +880,11 @@ function PISalesTable({ rows, week }: { rows: PISalesRow[]; week: number }) {
         </thead>
         <tbody className="divide-y divide-gray-50">
           {rows.map((r, i) => (
-            <Fragment key={r.salesPerson}>
-              <tr className="hover:bg-green-50 transition-colors cursor-pointer group" onClick={() => setOpen(open === r.salesPerson ? null : r.salesPerson)}>
+              <tr key={r.salesPerson} className="hover:bg-green-50 transition-colors cursor-pointer group"
+                onClick={() => router.push(`/sales-persons/${encodeURIComponent(r.salesPerson)}`)}>
                 <td className="px-3 py-3 text-gray-400 tabular-nums text-center">{i + 1}</td>
                 <td className="px-3 py-3 font-bold text-gray-800 group-hover:text-green-700 whitespace-nowrap">
-                  <span className="text-gray-400 mr-1">{open === r.salesPerson ? "▾" : "▸"}</span>{r.salesPerson}
+                  {r.salesPerson} <span className="text-gray-300 group-hover:text-green-600">→</span>
                 </td>
                 <td className="px-3 py-3 text-gray-500 tabular-nums text-center">{formatNumber(r.previousYear)}</td>
                 <td className="px-3 py-3 text-gray-800 tabular-nums text-center font-bold">{formatNumber(r.target, 0)}</td>
@@ -984,10 +898,6 @@ function PISalesTable({ rows, week }: { rows: PISalesRow[]; week: number }) {
                 <td className="px-3 py-3 text-center tabular-nums text-gray-600">{r.countries.length}</td>
                 <td className="px-3 py-3 text-center"><StatusBadge status={r.status} /></td>
               </tr>
-              {open === r.salesPerson && (
-                <tr><td colSpan={13} className="p-0"><PISalesDetail r={r} /></td></tr>
-              )}
-            </Fragment>
           ))}
         </tbody>
         {rows.length > 0 && (
@@ -1011,7 +921,7 @@ function PISalesTable({ rows, week }: { rows: PISalesRow[]; week: number }) {
       </table>
       <p className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
         Actual = orders by the Sales Person written on each PI (PI_BACKEND_MASTER). Target = 80/20 sheet; a target shared by two people (e.g. ATIF/MOHIT GUPTA) is split equally.
-        NBD = buyer&apos;s first-ever order is in this FY · CRR = repeat buyer. Click a row for country &amp; buyer details.
+        NBD = buyer&apos;s first-ever order is in this FY · CRR = repeat buyer. Click a name to open the full workspace (buyers, countries, NBD/CRR, order history).
       </p>
     </div>
   )

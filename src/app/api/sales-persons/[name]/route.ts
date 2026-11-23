@@ -13,6 +13,11 @@ import type { AppUser, BuyerSegment, BuyerTier, PerformanceStatus } from "@/type
 
 function normName(s: string) { return s.toLowerCase().trim() }
 
+/** Split a combined owner name ("ATIF/MOHIT GUPTA", "A & B") into people. */
+function splitOwners(name: string): string[] {
+  return (name || "").split(/\s*(?:\/|&|,|\+)\s*/).map((s) => s.toUpperCase().trim()).filter(Boolean)
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ name: string }> }
@@ -62,6 +67,26 @@ export async function GET(
     }
   }
 
+  // NBD = buyer whose first-ever PI (any FY) is in the current FY; else CRR.
+  const buyerKeyOf = (code: string | undefined, nm: string) =>
+    (code || "").toUpperCase().trim() || nm.toUpperCase().trim()
+  const firstFY = new Map<string, string>()
+  for (const r of allPI) {
+    const k = buyerKeyOf(r.buyerCode, r.buyerCompanyName)
+    if (!k || !r.financialYear) continue
+    const f = firstFY.get(k)
+    if (!f || r.financialYear < f) firstFY.set(k, r.financialYear)
+  }
+  const isNewPI = (r: { buyerCode?: string; buyerCompanyName: string }) =>
+    firstFY.get(buyerKeyOf(r.buyerCode, r.buyerCompanyName)) === currentFY
+
+  // This person's share of a target row (a target owned by "A/B" is split equally).
+  const NAME = name.toUpperCase().trim()
+  const shareOf = (owner: string) => {
+    const people = splitOwners(owner)
+    return people.includes(NAME) ? 1 / people.length : 0
+  }
+
   const currentPI = filterPIByFY(allPI, currentFY)
     .filter((r) => r.salesPerson.toUpperCase() === name.toUpperCase())
   const prevPI = filterPIByFY(allPI, previousFY)
@@ -70,10 +95,10 @@ export async function GET(
   // Aggregated Performance
   const actual       = sumContainers(currentPI)
   const prevActual   = sumContainers(prevPI)
-  
-  const target = targets
-    .filter((t) => t.financialYear === currentFY && t.salesPerson.toUpperCase() === name.toUpperCase())
-    .reduce((s, t) => s + t.currentYearTargetContainers, 0)
+
+  const target = Math.round(targets
+    .filter((t) => t.financialYear === currentFY)
+    .reduce((s, t) => s + t.currentYearTargetContainers * shareOf(t.salesPerson), 0))
 
   const targetDue    = targetDueTillWeek(target, currentWeek)
   const gap          = actual - targetDue
@@ -81,14 +106,16 @@ export async function GET(
   const status       = getStatus(target, actual, targetDue) as PerformanceStatus
 
   // Buyer portfolio
-  const buyerMap = new Map<string, { 
-    name: string; 
-    code: string; 
-    actual: number; 
-    target: number; 
-    segment: BuyerSegment; 
-    isKeyAccount: boolean 
+  const buyerMap = new Map<string, {
+    name: string;
+    code: string;
+    actual: number;
+    target: number;
+    segment: BuyerSegment;
+    isKeyAccount: boolean
     country: string
+    pis: number
+    isNew: boolean
   }>()
 
   // Process PIs
@@ -104,7 +131,9 @@ export async function GET(
         target: 0,
         segment,
         isKeyAccount,
-        country: r.countries
+        country: r.countries,
+        pis: 0,
+        isNew: isNewPI(r),
       })
     }
     // Containers are PI-level (repeated per product row) — count each PI once per buyer.
@@ -113,25 +142,28 @@ export async function GET(
     if (!seen.has(r.piNumber)) {
       seen.add(r.piNumber)
       buyerMap.get(key)!.actual += r.totalContainers
+      buyerMap.get(key)!.pis += 1
     }
   }
 
   // Process Targets for buyers not yet in PI history
-  for (const t of targets.filter(x => x.financialYear === currentFY && x.salesPerson.toUpperCase() === name.toUpperCase())) {
+  for (const t of targets.filter(x => x.financialYear === currentFY && shareOf(x.salesPerson) > 0)) {
     const key = buyerMaster.find(b => normName(b.buyerCompanyName) === normName(t.buyerCompanyName))?.buyerCode || t.buyerCompanyName
     if (!buyerMap.has(key)) {
        const { segment, isKeyAccount, canonicalCode } = resolveSegment(t.buyerCompanyName)
-       buyerMap.set(key, { 
-         name: t.buyerCompanyName, 
-         code: canonicalCode, 
-         actual: 0, 
-         target: 0, 
-         segment, 
+       buyerMap.set(key, {
+         name: t.buyerCompanyName,
+         code: canonicalCode,
+         actual: 0,
+         target: 0,
+         segment,
          isKeyAccount,
-         country: t.countries
+         country: t.countries,
+         pis: 0,
+         isNew: false,
        })
     }
-    buyerMap.get(key)!.target += t.currentYearTargetContainers
+    buyerMap.get(key)!.target += t.currentYearTargetContainers * shareOf(t.salesPerson)
   }
 
   const buyers = Array.from(buyerMap.values()).map(b => ({
@@ -151,17 +183,26 @@ export async function GET(
     // legacy fields kept for backward compat
     vipCount:      buyers.filter(b => b.segment === "VIP").length,
     strategicCount:buyers.filter(b => b.segment === "STRATEGIC").length,
-    nbdCount:      0,
+    nbdCount:      buyers.filter(b => b.isNew && b.actual > 0).length,
     otherCount:    buyers.filter(b => b.segment !== "VIP" && b.segment !== "STRATEGIC").length,
   }
 
   // Country breakdown
-  const countryMap = new Map<string, { country: string; actual: number; target: number }>()
+  const countryMap = new Map<string, {
+    country: string; actual: number; target: number
+    nbd: number; crr: number; pis: number; buyers: number
+  }>()
   buyers.forEach(b => {
     const c = b.country.toUpperCase()
-    if (!countryMap.has(c)) countryMap.set(c, { country: c, actual: 0, target: 0 })
-    countryMap.get(c)!.actual += b.actual
-    countryMap.get(c)!.target += b.target
+    if (!countryMap.has(c)) countryMap.set(c, { country: c, actual: 0, target: 0, nbd: 0, crr: 0, pis: 0, buyers: 0 })
+    const e = countryMap.get(c)!
+    e.actual += b.actual
+    e.target += b.target
+    if (b.actual > 0) {
+      if (b.isNew) e.nbd += b.actual; else e.crr += b.actual
+      e.buyers += 1
+    }
+    e.pis += b.pis
   })
   const countries = Array.from(countryMap.values())
     .sort((a, b) => b.actual - a.actual)
@@ -171,17 +212,35 @@ export async function GET(
       status: getStatus(c.target, c.actual, targetDueTillWeek(c.target, currentWeek)) as PerformanceStatus
     }))
 
+  // NBD vs CRR split of this person's orders
+  const nbdPI = currentPI.filter(isNewPI)
+  const crrPI = currentPI.filter((r) => !isNewPI(r))
+  const uniq = (rs: typeof currentPI, f: (r: (typeof currentPI)[number]) => string) =>
+    new Set(rs.map(f).filter(Boolean)).size
+  const mix = {
+    pis:       uniq(currentPI, (r) => r.piNumber),
+    mts:       parseFloat(currentPI.reduce((s, r) => s + (r.qtyMTs || 0), 0).toFixed(1)),
+    countries: uniq(currentPI, (r) => r.countries.toUpperCase().trim()),
+    nbdCtrs:   sumContainers(nbdPI),
+    nbdPIs:    uniq(nbdPI, (r) => r.piNumber),
+    nbdBuyers: uniq(nbdPI, (r) => buyerKeyOf(r.buyerCode, r.buyerCompanyName)),
+    crrCtrs:   sumContainers(crrPI),
+    crrPIs:    uniq(crrPI, (r) => r.piNumber),
+    crrBuyers: uniq(crrPI, (r) => buyerKeyOf(r.buyerCode, r.buyerCompanyName)),
+  }
+
   return NextResponse.json({
     salesPerson: {
       name,
       performance: { target, actual, prevActual, targetDue, gap, achievementPct, status }
     },
+    mix,
     summary,
     buyers,
     countries,
     piHistory: currentPI
       .sort((a, b) => new Date(b.piDate).getTime() - new Date(a.piDate).getTime())
-      .slice(0, 100),
+      .slice(0, 1000),
     meta: { currentFY, currentWeek }
   })
 }
