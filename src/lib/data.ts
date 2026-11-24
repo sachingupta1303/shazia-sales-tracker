@@ -166,11 +166,41 @@ export async function getPIRecords(): Promise<PIRecord[]> {
       return (code && codeToName.get(code)) || name
     }
 
+    // ── Blank "PI Date" safety net ──────────────────────────────────────────────
+    // The hourly Apps Script sync has been writing some PI_BACKEND_MASTER rows
+    // with an empty "PI Date" while every other column (incl. Financial Year /
+    // FY Week / FY Month) is filled. Dropping those rows silently removed most of
+    // the orders from every page. Keep them instead:
+    //   1. take the date from another line of the same PI that has one;
+    //   2. otherwise approximate it from Financial Year + FY Week No
+    //      (FY starts 1 April; week 1 = 1 April up to the first Sunday).
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const fmtDate = (d: Date) => `${d.getDate()}-${MON[d.getMonth()]}-${d.getFullYear()}`
+    const dateByPI = new Map<string, string>()
+    for (const r of dataRows) {
+      const pi = getCell(r, h, "PI Number"), d = getCell(r, h, "PI Date")
+      if (pi && d && !dateByPI.has(pi)) dateByPI.set(pi, d)
+    }
+    const fallbackDate = (r: string[]): string => {
+      const pi = getCell(r, h, "PI Number")
+      const known = dateByPI.get(pi)
+      if (known) return known
+      const fy = /^(\d{4})-\d{2}$/.exec(getCell(r, h, "Financial Year"))
+      const week = getCellNum(r, h, "FY Week No")
+      if (!fy || !week) return ""
+      const start = new Date(Number(fy[1]), 3, 1)
+      if (week <= 1) return fmtDate(start)
+      const firstMonday = new Date(start)
+      firstMonday.setDate(start.getDate() + ((8 - start.getDay()) % 7 || 7))
+      firstMonday.setDate(firstMonday.getDate() + (week - 2) * 7)
+      return fmtDate(firstMonday)
+    }
+
     return dataRows
-      .filter((r) => r[h["PI Number"]] && r[h["PI Date"]])
+      .filter((r) => r[h["PI Number"]] && (r[h["PI Date"]] || r[h["Financial Year"]]))
       .map((r) => ({
         piNumber:          getCell(r, h, "PI Number"),
-        piDate:            getCell(r, h, "PI Date"),
+        piDate:            getCell(r, h, "PI Date") || fallbackDate(r),
         crmEmail:          getCell(r, h, "CRM Email"),
         buyerCompanyName:  canonicalizeName(getCell(r, h, "Buyer Company Name")),
         buyerCode:         getCell(r, h, "Buyer Code"),
