@@ -336,6 +336,7 @@ function EditCountryTargetModal({ row, onClose, onSaved }: { row: CountryTargetR
 interface BuyerControlRow {
   buyerName: string; country: string; tier: string; annualTarget: number
   responsiblePerson: string; canonicalCode: string; segment: string; isKeyAccount: boolean
+  salesCoordinator: string; active: boolean
 }
 
 const TIER_STYLE: Record<string, string> = {
@@ -352,6 +353,8 @@ function BuyersTab() {
   const [rows, setRows]       = useState<BuyerControlRow[]>([])
   const [tiers, setTiers]     = useState<string[]>([])
   const [segments, setSegs]   = useState<string[]>([])
+  const [coords, setCoords]   = useState<string[]>([])
+  const [showInactive, setShowInactive] = useState(true)
   const [loading, setLoading] = useState(true)
   const [err, setErr]         = useState<string | null>(null)
   const [search, setSearch]   = useState("")
@@ -364,7 +367,7 @@ function BuyersTab() {
       const res = await fetch("/api/admin/buyer-control")
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`)
       const data = await res.json()
-      setRows(data.rows); setTiers(data.tiers); setSegs(data.segments)
+      setRows(data.rows); setTiers(data.tiers); setSegs(data.segments); setCoords(data.coordinators ?? [])
     } catch (e: any) { setErr(e.message || "Failed to load") }
     finally { setLoading(false) }
   }, [])
@@ -407,10 +410,45 @@ function BuyersTab() {
     finally { setSaving(null) }
   }
 
+  const saveActive = async (row: BuyerControlRow, active: boolean) => {
+    if (!active && !window.confirm(`Make "${row.buyerName}" (${row.country}) INACTIVE?\n\nIt will disappear from the weekly review link, targets, daily report and meeting reminders. You can switch it back on any time.`)) return
+    const key = `${row.buyerName}-active`
+    setSaving(key)
+    try {
+      const res = await fetch("/api/admin/buyer-control", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "active", buyerName: row.buyerName, country: row.country, active }),
+      })
+      if (!res.ok) { flash("⚠️ " + ((await res.json().catch(() => ({}))).error || "Save failed")); return }
+      setRows((prev) => prev.map((r) => r.buyerName === row.buyerName && r.country === row.country ? { ...r, active } : r))
+      flash(`✅ ${row.buyerName}: ${active ? "active again" : "inactive"}`)
+    } catch { flash("⚠️ Save failed") }
+    finally { setSaving(null) }
+  }
+
+  const saveCoordinator = async (row: BuyerControlRow, coordinator: string) => {
+    const key = `${row.buyerName}-coord`
+    setSaving(key)
+    try {
+      const res = await fetch("/api/admin/buyer-control", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "coordinator", buyerName: row.buyerName, country: row.country, coordinator }),
+      })
+      if (!res.ok) { flash("⚠️ " + ((await res.json().catch(() => ({}))).error || "Coordinator save failed")); return }
+      setRows((prev) => prev.map((r) => r.buyerName === row.buyerName && r.country === row.country ? { ...r, salesCoordinator: coordinator } : r))
+      flash(`✅ ${row.buyerName}: coordinator → ${coordinator}`)
+    } catch { flash("⚠️ Coordinator save failed") }
+    finally { setSaving(null) }
+  }
+
+  const inactiveCount = rows.filter((r) => !r.active).length
   const filtered = rows.filter((r) =>
-    !search ||
-    r.buyerName.toLowerCase().includes(search.toLowerCase()) ||
-    r.country.toLowerCase().includes(search.toLowerCase())
+    (showInactive || r.active) && (
+      !search ||
+      r.buyerName.toLowerCase().includes(search.toLowerCase()) ||
+      r.country.toLowerCase().includes(search.toLowerCase()) ||
+      (r.salesCoordinator || "").toLowerCase().includes(search.toLowerCase())
+    )
   )
 
   if (loading) return <Skeleton />
@@ -421,10 +459,16 @@ function BuyersTab() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <input
           value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search buyer / country…"
+          placeholder="Search buyer / country / coordinator…"
           className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-64 focus:outline-none focus:ring-2 focus:ring-green-500"
         />
-        <span className="text-xs text-gray-400">{filtered.length} buyers · tier change updates meeting cadence automatically</span>
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-gray-600 flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+            Show inactive ({inactiveCount})
+          </label>
+          <span className="text-xs text-gray-400">{filtered.length} buyers · tier change updates meeting cadence automatically</span>
+        </div>
       </div>
 
       {toast && <div className="bg-slate-900 text-white text-xs rounded-lg px-3 py-2 inline-block">{toast}</div>}
@@ -436,21 +480,37 @@ function BuyersTab() {
               <th className="px-3 py-2.5 text-left">Buyer</th>
               <th className="px-3 py-2.5 text-left">Country</th>
               <th className="px-3 py-2.5 text-left">Owner</th>
+              <th className="px-3 py-2.5 text-left">Coordinator</th>
               <th className="px-3 py-2.5 text-right">Target</th>
               <th className="px-3 py-2.5 text-left">Tier (cadence)</th>
               <th className="px-3 py-2.5 text-left">Segment</th>
               <th className="px-3 py-2.5 text-center">VIP / Key</th>
+              <th className="px-3 py-2.5 text-center">Status</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((r, i) => {
               const tierSaving = savingKey === `${r.buyerName}-tier`
               const segSaving  = savingKey === `${r.buyerName}-seg`
+              const actSaving  = savingKey === `${r.buyerName}-active`
+              const coSaving   = savingKey === `${r.buyerName}-coord`
               return (
-                <tr key={`${r.buyerName}-${r.country}-${i}`} className={`border-b border-gray-100 ${i % 2 ? "bg-slate-50/50" : ""}`}>
-                  <td className="px-3 py-2 font-semibold text-slate-900">{r.buyerName}</td>
+                <tr key={`${r.buyerName}-${r.country}-${i}`} className={`border-b border-gray-100 ${!r.active ? "bg-red-50/40 opacity-70" : i % 2 ? "bg-slate-50/50" : ""}`}>
+                  <td className={`px-3 py-2 font-semibold ${r.active ? "text-slate-900" : "text-gray-500 line-through"}`}>{r.buyerName}</td>
                   <td className="px-3 py-2 text-gray-600">{r.country}</td>
                   <td className="px-3 py-2 text-gray-500">{r.responsiblePerson || "—"}</td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={r.salesCoordinator || ""} disabled={coSaving}
+                      onChange={(e) => e.target.value && saveCoordinator(r, e.target.value)}
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      {!r.salesCoordinator && <option value="">— none —</option>}
+                      {coords.map((c) => <option key={c} value={c}>{c}</option>)}
+                      {r.salesCoordinator && !coords.includes(r.salesCoordinator) && <option value={r.salesCoordinator}>{r.salesCoordinator}</option>}
+                    </select>
+                    {coSaving && <span className="text-[10px] text-gray-400 ml-1">saving…</span>}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">{formatNumber(r.annualTarget, 0)}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
@@ -481,6 +541,18 @@ function BuyersTab() {
                       className={`text-base transition-transform hover:scale-110 ${r.isKeyAccount ? "" : "opacity-25 grayscale"}`}
                     >
                       ⭐
+                    </button>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <button
+                      disabled={actSaving}
+                      onClick={() => saveActive(r, !r.active)}
+                      title={r.active ? "Make inactive (hide from all reports)" : "Make active again"}
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap disabled:opacity-50 ${
+                        r.active ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" : "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+                      }`}
+                    >
+                      {actSaving ? "…" : r.active ? "● Active" : "○ Inactive"}
                     </button>
                   </td>
                 </tr>

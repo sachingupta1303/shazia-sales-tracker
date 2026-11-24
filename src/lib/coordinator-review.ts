@@ -138,6 +138,33 @@ export async function getRiskForCoordinator(fy: FinancialYear, coordinator: stri
   return all.find((g) => g.coordinator.toLowerCase() === coordinator.toLowerCase()) ?? null
 }
 
+export interface SavedReviewEntry {
+  reason: string; remark: string; actionPlan: string; expectedOrder: string; submittedAt: string
+}
+
+/**
+ * What this coordinator has already saved this week — the LATEST entry per buyer
+ * (rows are append-only, so a re-save simply adds a newer row). Used to pre-fill
+ * the magic-link form so partial work stays visible for the whole week.
+ */
+export async function getSavedReviewsForCoordinator(
+  fy: FinancialYear, week: number, coordinator: string
+): Promise<Record<string, SavedReviewEntry>> {
+  const reviews = await getCoordinatorReviews(fy, week)
+  const me = coordinator.toLowerCase().trim()
+  const out: Record<string, SavedReviewEntry> = {}
+  for (const r of reviews) {
+    if (r.salesCoordinator.toLowerCase().trim() !== me) continue
+    const cur = out[r.buyerName]
+    if (cur && (cur.submittedAt || "") > (r.submittedAt || "")) continue
+    out[r.buyerName] = {
+      reason: r.reason ?? "", remark: r.remark ?? "", actionPlan: r.actionPlan ?? "",
+      expectedOrder: r.expectedOrder ?? "", submittedAt: r.submittedAt ?? "",
+    }
+  }
+  return out
+}
+
 /** Set of coordinator names (lowercased) who have submitted a review for the week. */
 export async function getSubmittedCoordinators(fy: FinancialYear, week: number): Promise<Set<string>> {
   const reviews = await getCoordinatorReviews(fy, week)

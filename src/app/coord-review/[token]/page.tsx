@@ -5,9 +5,8 @@
  * email. The token (HMAC-signed) authorizes the coordinator's identity; the form
  * lists their "risk" buyers (no / low orders) to fill reasons for.
  */
-import { verifyReviewToken, getRiskForCoordinator } from "@/lib/coordinator-review"
+import { verifyReviewToken, getRiskForCoordinator, getSavedReviewsForCoordinator } from "@/lib/coordinator-review"
 import { getCurrentFY, getCurrentFYWeek } from "@/lib/fy-utils"
-import { getCoordinatorReviews } from "@/lib/data"
 import { CoordReviewClient } from "./coord-review-client"
 
 export const dynamic = "force-dynamic"
@@ -19,11 +18,10 @@ export default async function CoordReviewPage({ params }: { params: Promise<{ to
 
   const fy   = getCurrentFY()
   const week = getCurrentFYWeek()
-  const [group, weekReviews] = await Promise.all([
+  const [group, saved] = await Promise.all([
     getRiskForCoordinator(fy, t.coordinator),
-    getCoordinatorReviews(fy, week),
+    getSavedReviewsForCoordinator(fy, week, t.coordinator),
   ])
-  const mine = weekReviews.filter((r) => r.salesCoordinator.toLowerCase() === t.coordinator.toLowerCase())
 
   return (
     <CoordReviewClient
@@ -32,7 +30,7 @@ export default async function CoordReviewPage({ params }: { params: Promise<{ to
       fy={fy}
       week={week}
       buyers={group?.buyers ?? []}
-      alreadySubmitted={mine.length > 0}
+      saved={saved}
     />
   )
 }

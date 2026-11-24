@@ -285,7 +285,8 @@ export async function getTargetRecords(fy?: FinancialYear): Promise<TargetRecord
         console.error("TARGET_MASTER fallback fetch error:", e)
       }
 
-      return [...primary, ...fallback]
+      const inactive = await getInactiveBuyerKeys()
+      return [...primary, ...fallback.filter((t) => !isBuyerInactive(inactive, t.buyerCompanyName, t.countries))]
     })
     return fy ? records.filter((r: TargetRecord) => r.financialYear === fy) : records
   } catch (e) {
@@ -1797,7 +1798,66 @@ export function classifyBuyerTiers<T extends { targetContainer2026: number; buye
 
 // ─── 80/20 Buyers Sheet ───────────────────────────────────────────────────────
 
+// ─── Inactive buyers (Control Panel switch) ───────────────────────────────────
+// INACTIVE_BUYERS tab in SALES_TRACKING, append-only:
+//   Buyer Name | Country | Status (ACTIVE / INACTIVE) | Reason | Updated By | Updated At
+// The latest row per (buyer + country) decides. An INACTIVE buyer is dropped from
+// the 80/20 list and targets, so it disappears from the weekly coordinator review,
+// Target vs Actual targets, the daily report, meeting reminders, etc. Its past PI
+// orders are untouched (they are real sales).
+const INACTIVE_HEADERS = ["Buyer Name", "Country", "Status", "Reason", "Updated By", "Updated At"]
+const inactiveKey = (name: string, country: string) =>
+  `${(name ?? "").toLowerCase().replace(/\s+/g, " ").trim()}||${(country ?? "").toLowerCase().trim()}`
+
+/** Set of inactive buyer keys (`name||country`, lowercased). */
+export async function getInactiveBuyerKeys(): Promise<Set<string>> {
+  return withMemo("inactive_buyers", async () => {
+    try {
+      await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.INACTIVE_BUYERS, INACTIVE_HEADERS)
+      const rows = await readSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.INACTIVE_BUYERS)
+      if (rows.length < 2) return new Set<string>()
+      const [headerRow, ...dataRows] = rows
+      const h = buildHeaderMap(headerRow)
+      const state = new Map<string, string>()
+      for (const r of dataRows) {
+        const name = getCell(r, h, "Buyer Name")
+        if (!name) continue
+        state.set(inactiveKey(name, getCell(r, h, "Country")), getCell(r, h, "Status").toUpperCase())
+      }
+      return new Set([...state.entries()].filter(([, s]) => s === "INACTIVE").map(([k]) => k))
+    } catch (e) {
+      console.error("[data] inactive buyers fetch error:", e)
+      return new Set<string>()
+    }
+  })
+}
+
+export function isBuyerInactive(keys: Set<string>, buyerName: string, country: string): boolean {
+  return keys.has(inactiveKey(buyerName, country))
+}
+
+/** Switch a buyer off (inactive) or back on. */
+export async function setBuyerActive(params: {
+  buyerName: string; country: string; active: boolean; reason?: string; by?: string
+}): Promise<void> {
+  await ensureSheetExists(SHEETS.SALES_TRACKING, SHEET_NAMES.INACTIVE_BUYERS, INACTIVE_HEADERS)
+  await appendToSheet(SHEETS.SALES_TRACKING, SHEET_NAMES.INACTIVE_BUYERS, [[
+    params.buyerName, params.country, params.active ? "ACTIVE" : "INACTIVE",
+    params.reason ?? "", params.by ?? "", new Date().toISOString(),
+  ]])
+  invalidateSheetCache(SHEETS.SALES_TRACKING, SHEET_NAMES.INACTIVE_BUYERS)
+  invalidateMemo("inactive_buyers", "target_records", "meeting_schedules", "others_buyers")
+}
+
+/** 80/20 buyers WITHOUT inactive ones — what every report uses. */
 export async function get8020Buyers(): Promise<Buyer8020[]> {
+  const [all, inactive] = await Promise.all([get8020BuyersAll(), getInactiveBuyerKeys()])
+  if (!inactive.size) return all
+  return all.filter((b) => !isBuyerInactive(inactive, b.buyerName, b.country))
+}
+
+/** Every 80/20 buyer, including inactive ones (Control Panel needs them to switch back on). */
+export async function get8020BuyersAll(): Promise<Buyer8020[]> {
   return withMemo("buyers_8020", async () => {
     try {
       // Tab name may have trailing space, different casing, or "80-20"/"80_20" variations
@@ -1953,6 +2013,60 @@ export async function updateBuyer8020Tier(params: {
   invalidateMemo("buyers_8020", "meeting_schedules", "others_buyers")
 
   return { ok: true, oldTier }
+}
+
+/**
+ * Change a buyer's Sales Coordinator in the 80/20 sheet (and the coordinator
+ * email column, copied from another row that already has that coordinator).
+ */
+export async function updateBuyer8020Coordinator(params: {
+  buyerName: string; country?: string; coordinator: string
+}): Promise<{ ok: boolean; oldCoordinator?: string; reason?: string }> {
+  const tabName = await findExistingTab(SHEETS.EIGHTY_TWENTY, [
+    SHEET_NAMES.EIGHTY_TWENTY_BUYERS,
+    "80/20 Buyers", "80/20 buyers", "80/20", "80-20 buyers", "8020 buyers", "EIGHTY_TWENTY_BUYERS",
+  ])
+  if (!tabName) return { ok: false, reason: "tab_not_found" }
+
+  const rows = await readSheet(SHEETS.EIGHTY_TWENTY, tabName)
+  if (!rows.length) return { ok: false, reason: "empty_sheet" }
+  const [headerRow, ...dataRows] = rows
+  const h = buildHeaderMap(headerRow)
+  const hLower: Record<string, number> = {}
+  for (const [key, idx] of Object.entries(h)) hLower[key.toLowerCase()] = idx
+  const colIdx = (...names: string[]) => {
+    for (const n of names) { const i = hLower[n.toLowerCase()]; if (i !== undefined) return i }
+    return undefined
+  }
+  const nameIdx  = colIdx("Buyer Company Name", "Buyer Name", "Buyer", "Company Name", "Company")
+  const cntryIdx = colIdx("Countries", "Country", "Market")
+  const coordIdx = colIdx("sales Coordinators", "Sales Coordinators", "Sales Coordinator", "Coordinator")
+  const mailIdx  = colIdx("sales cood mail", "Sales cood mail", "Sales Coordinator Email", "Coordinator Email")
+  if (nameIdx === undefined || coordIdx === undefined) return { ok: false, reason: "missing_columns" }
+
+  const wantName    = params.buyerName.trim().toLowerCase()
+  const wantCountry = (params.country ?? "").trim().toLowerCase()
+  const matchIdx = dataRows.findIndex((r) => {
+    if ((r[nameIdx] ?? "").trim().toLowerCase() !== wantName) return false
+    if (!wantCountry || cntryIdx === undefined) return true
+    return (r[cntryIdx] ?? "").trim().toLowerCase() === wantCountry
+  })
+  if (matchIdx === -1) return { ok: false, reason: "row_not_found" }
+
+  const coord = params.coordinator.trim()
+  const updated = [...dataRows[matchIdx]]
+  while (updated.length < headerRow.length) updated.push("")
+  const oldCoordinator = updated[coordIdx] ?? ""
+  updated[coordIdx] = coord
+  if (mailIdx !== undefined) {
+    const donor = dataRows.find((r) =>
+      (r[coordIdx] ?? "").trim().toLowerCase() === coord.toLowerCase() && (r[mailIdx] ?? "").trim())
+    updated[mailIdx] = donor ? donor[mailIdx].trim() : ""
+  }
+  await updateSheetRow(SHEETS.EIGHTY_TWENTY, tabName, matchIdx + 2, updated)
+  invalidateSheetCache(SHEETS.EIGHTY_TWENTY, tabName)
+  invalidateMemo("buyers_8020", "meeting_schedules", "others_buyers")
+  return { ok: true, oldCoordinator }
 }
 
 // ─── 80/20 Meeting Schedule / History / Alerts (Google Sheets) ────────────────

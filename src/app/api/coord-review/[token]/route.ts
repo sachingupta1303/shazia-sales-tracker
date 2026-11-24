@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import { getCurrentFY, getCurrentFYWeek } from "@/lib/fy-utils"
 import {
-  verifyReviewToken, getRiskForCoordinator,
+  verifyReviewToken, getRiskForCoordinator, getSavedReviewsForCoordinator,
 } from "@/lib/coordinator-review"
-import { getCoordinatorReviews, addCoordinatorReviews } from "@/lib/data"
+import { addCoordinatorReviews } from "@/lib/data"
 import type { CoordinatorReviewRow } from "@/types"
 
 export const dynamic = "force-dynamic"
@@ -16,18 +16,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   const fy   = getCurrentFY()
   const week = getCurrentFYWeek()
-  const [group, weekReviews] = await Promise.all([
+  const [group, saved] = await Promise.all([
     getRiskForCoordinator(fy, t.coordinator),
-    getCoordinatorReviews(fy, week),
+    getSavedReviewsForCoordinator(fy, week, t.coordinator),
   ])
-  const mine = weekReviews.filter((r) => r.salesCoordinator.toLowerCase() === t.coordinator.toLowerCase())
 
   return NextResponse.json({
-    coordinator:     t.coordinator,
+    coordinator:      t.coordinator,
     fy, week,
-    buyers:          group?.buyers ?? [],
-    alreadySubmitted: mine.length > 0,
-    submittedCount:   mine.length,
+    buyers:           group?.buyers ?? [],
+    saved,                                   // latest saved entry per buyer this week
+    alreadySubmitted: Object.keys(saved).length > 0,
+    submittedCount:   Object.keys(saved).length,
   })
 }
 
@@ -76,5 +76,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
   if (!rows.length) return NextResponse.json({ error: "Nothing to submit" }, { status: 400 })
   await addCoordinatorReviews(rows)
-  return NextResponse.json({ ok: true, count: rows.length })
+  const saved = await getSavedReviewsForCoordinator(fy, week, t.coordinator)
+  return NextResponse.json({ ok: true, count: rows.length, saved })
 }

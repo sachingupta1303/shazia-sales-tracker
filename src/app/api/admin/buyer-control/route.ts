@@ -6,15 +6,20 @@
  *      body (tier):    { action: "tier", buyerName, country?, tier }
  *      body (segment): { action: "segment", buyerName, country?, canonicalCode?, segment, isKeyAccount }
  *
+ *      body (active):  { action: "active", buyerName, country, active: boolean, reason? }
+ *      body (coord):   { action: "coordinator", buyerName, country?, coordinator }
+ *
  * Tier  → 80/20 buyers sheet ("Tier" column) — meeting cadence follows automatically.
+ * Active → INACTIVE_BUYERS tab (inactive buyers drop out of every report).
+ * Coordinator → 80/20 buyers sheet ("Sales Coordinators" + coordinator mail).
  * Segment/VIP → CANONICAL_BUYER_MASTER (creates a canonical row if none matched).
  */
 
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import {
-  get8020Buyers, getCanonicalBuyers, getBuyerAliasMap,
-  updateBuyer8020Tier, updateCanonicalBuyer,
+  get8020BuyersAll, getCanonicalBuyers, getBuyerAliasMap, getInactiveBuyerKeys, isBuyerInactive,
+  updateBuyer8020Tier, updateCanonicalBuyer, setBuyerActive, updateBuyer8020Coordinator,
 } from "@/lib/data"
 import type { AppUser, BuyerSegment, CanonicalBuyer } from "@/types"
 
@@ -39,8 +44,8 @@ export async function GET() {
   const user = session.user as unknown as AppUser
   if (!canAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
-  const [buyers, canonical, aliasMap] = await Promise.all([
-    get8020Buyers(), getCanonicalBuyers(), getBuyerAliasMap(),
+  const [buyers, canonical, aliasMap, inactive] = await Promise.all([
+    get8020BuyersAll(), getCanonicalBuyers(), getBuyerAliasMap(), getInactiveBuyerKeys(),
   ])
 
   const canonByCode = new Map(canonical.map((c) => [c.canonicalBuyerCode, c]))
@@ -59,10 +64,20 @@ export async function GET() {
       canonicalCode:     canon?.canonicalBuyerCode ?? "",
       segment:          (canon?.segment ?? "EXISTING") as BuyerSegment,
       isKeyAccount:      canon?.isKeyAccount ?? false,
+      salesCoordinator:  b.salesCoordinator,
+      active:            !isBuyerInactive(inactive, b.buyerName, b.country),
     }
   }).sort((a, b) => b.annualTarget - a.annualTarget || a.buyerName.localeCompare(b.buyerName))
 
-  return NextResponse.json({ rows, segments: VALID_SEGMENTS, tiers: VALID_TIERS })
+  // Coordinator names already used in the sheet (case-insensitive unique)
+  const coordMap = new Map<string, string>()
+  for (const b of buyers) {
+    const c = (b.salesCoordinator || "").trim()
+    if (c && !coordMap.has(c.toLowerCase())) coordMap.set(c.toLowerCase(), c)
+  }
+  const coordinators = [...coordMap.values()].sort((a, b) => a.localeCompare(b))
+
+  return NextResponse.json({ rows, segments: VALID_SEGMENTS, tiers: VALID_TIERS, coordinators })
 }
 
 // ── POST ────────────────────────────────────────────────────────────────────
@@ -73,7 +88,10 @@ export async function POST(req: Request) {
   if (!canAdmin(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const body = await req.json() as {
-    action:        "tier" | "segment"
+    action:        "tier" | "segment" | "active" | "coordinator"
+    active?:       boolean
+    reason?:       string
+    coordinator?:  string
     buyerName:     string
     country?:      string
     tier?:         "TIER1" | "TIER2" | "TIER3" | "OTHERS"
@@ -94,6 +112,25 @@ export async function POST(req: Request) {
     })
     if (!result.ok) return NextResponse.json({ error: result.reason ?? "update_failed" }, { status: 400 })
     return NextResponse.json({ ok: true, oldTier: result.oldTier, newTier: body.tier })
+  }
+
+  // ── Active / inactive switch ──
+  if (body.action === "active") {
+    if (typeof body.active !== "boolean") return NextResponse.json({ error: "active (true/false) required" }, { status: 400 })
+    await setBuyerActive({
+      buyerName: body.buyerName, country: body.country ?? "", active: body.active,
+      reason: (body.reason ?? "").slice(0, 200), by: user.email ?? user.name ?? "",
+    })
+    return NextResponse.json({ ok: true, active: body.active })
+  }
+
+  // ── Sales coordinator change ──
+  if (body.action === "coordinator") {
+    const coord = (body.coordinator ?? "").trim()
+    if (!coord) return NextResponse.json({ error: "coordinator required" }, { status: 400 })
+    const result = await updateBuyer8020Coordinator({ buyerName: body.buyerName, country: body.country, coordinator: coord })
+    if (!result.ok) return NextResponse.json({ error: result.reason ?? "update_failed" }, { status: 400 })
+    return NextResponse.json({ ok: true, oldCoordinator: result.oldCoordinator, coordinator: coord })
   }
 
   // ── Segment / VIP update ──

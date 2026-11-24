@@ -45,6 +45,8 @@ export const SHEET_NAMES = {
   COORDINATOR_REVIEW:     "COORDINATOR_REVIEW",
   // Manual buyer merges — a renamed/rebranded buyer → the established buyer's code
   BUYER_MERGES:           "BUYER_MERGES",
+  // Buyers switched off from the Control Panel (append-only; latest row per buyer wins)
+  INACTIVE_BUYERS:        "INACTIVE_BUYERS",
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -196,7 +198,7 @@ export async function readSheet(
     spreadsheetId,
     range: fullRange,
   })
-  
+
   const values = (res.data.values as string[][]) ?? []
   setCachedData(cacheKey, values)
   return values
