@@ -5,6 +5,8 @@
  * GET /api/reports/daily-buyer?format=html     → full HTML (preview in browser)
  * GET /api/reports/daily-buyer?send=1           → emails the report to the logged-in user
  * GET /api/reports/daily-buyer?send=1&to=x@y    → emails to a specific address
+ * Add &week=N to any of the above to get the report as of the end of FY week N
+ * (a past week); without it the report is "till now".
  */
 
 import { NextResponse } from "next/server"
@@ -18,8 +20,8 @@ function canView(user: AppUser) {
     || user.role === "SUPER_ADMIN" || user.role === "ADMIN"
 }
 
-function todayLabelIST(): string {
-  return new Date().toLocaleDateString("en-IN", {
+function dateLabelIST(d: Date = new Date()): string {
+  return d.toLocaleDateString("en-IN", {
     timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
   })
 }
@@ -36,8 +38,12 @@ export async function GET(req: Request) {
   const status = (url.searchParams.get("status") || "").toUpperCase()  // ACHIEVED-> OVER_ACHIEVED etc.
   const to     = url.searchParams.get("to") || session.user.email || ""
 
-  const report    = await buildDailyBuyerReport()
-  const dateLabel = todayLabelIST()
+  const weekParam = Number(url.searchParams.get("week") || "0")
+  const report    = await buildDailyBuyerReport({ week: weekParam })
+  const isPast    = report.week < report.currentWeek
+  const dateLabel = isPast
+    ? `Week ${report.week} (as of ${dateLabelIST(new Date(report.weekEnd + "T12:00:00"))})`
+    : dateLabelIST()
 
   // Optional status filter for preview/PDF/JSON (email always sends the full report)
   const statusMap: Record<string, string> = { ACHIEVED: "OVER_ACHIEVED", ON_TRACK: "ON_TRACK", CRITICAL: "CRITICAL", OVER_ACHIEVED: "OVER_ACHIEVED" }
@@ -51,7 +57,7 @@ export async function GET(req: Request) {
     const html   = renderDailyReportHtml(report, dateLabel)
     const result = await sendMail({
       to,
-      subject: `📊 Daily Buyer Report — ${dateLabel} · ${report.summary.critical} critical`,
+      subject: `📊 ${isPast ? "Weekly" : "Daily"} Buyer Report — ${dateLabel} · ${report.summary.critical} critical`,
       html,
     })
     return NextResponse.json({

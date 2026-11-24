@@ -16,7 +16,8 @@
 import {
   get8020Buyers, getPIRecords, getTargetRecords, sumContainersBy,
 } from "./data"
-import { getCurrentFY, getCurrentFYWeek, parsePIDate, isInFY } from "./fy-utils"
+import { getCurrentFY, getCurrentFYWeek, getFYWeek, getFYBoundaries, parsePIDate, isInFY } from "./fy-utils"
+import type { FinancialYear } from "@/types"
 import { APP_BASE_URL } from "./mailer"
 
 export type DailyStatus = "CRITICAL" | "ON_TRACK" | "OVER_ACHIEVED" | "NO_TARGET"
@@ -39,6 +40,8 @@ export interface DailyBuyerRow {
 export interface DailyReport {
   fy:        string
   week:      number
+  currentWeek: number   // today's FY week (week < currentWeek = a past-week report)
+  weekEnd:   string     // ISO date (yyyy-mm-dd) of the last day of `week`
   fyMonth:   number
   monthName: string
   rows:      DailyBuyerRow[]
@@ -60,21 +63,51 @@ const FY_MONTH_NAMES = ["", "April", "May", "June", "July", "August", "September
   "October", "November", "December", "January", "February", "March"]
 
 const norm = (s: string) => s.toLowerCase().trim()
-function currentFYMonth(): number {
-  const m = new Date().getMonth()       // 0=Jan
-  return ((m - 3 + 12) % 12) + 1        // April=1 … March=12
+function fyMonthOf(d: Date): number {
+  return ((d.getMonth() - 3 + 12) % 12) + 1   // April=1 … March=12
 }
 
-export async function buildDailyBuyerReport(): Promise<DailyReport> {
-  const fy      = getCurrentFY()
-  const week    = getCurrentFYWeek()
-  const fyMonth = currentFYMonth()
+/** Last day (Sunday, or 31 Mar) of an FY week — same week rule as getFYWeek. */
+export function fyWeekEndDate(fy: FinancialYear, week: number): Date {
+  const { start, end } = getFYBoundaries(fy)
+  const firstMonday = new Date(start)
+  firstMonday.setDate(start.getDate() + ((1 - start.getDay() + 7) % 7))
+  const d = new Date(firstMonday)
+  d.setDate(firstMonday.getDate() + (week - 1) * 7 - 1)
+  if (d < start) return new Date(start)
+  return d > end ? new Date(end) : d
+}
+
+const isoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+
+/**
+ * Build the report as of the END of an FY week. With no week (or the current
+ * week) it is the live "till now" report; with a past week every number —
+ * till-week actual, pace target, month actual and status — is what it was at
+ * the end of that week, so an old week's report can be re-downloaded or sent.
+ */
+export async function buildDailyBuyerReport(opts: { week?: number } = {}): Promise<DailyReport> {
+  const fy          = getCurrentFY()
+  const currentWeek = getCurrentFYWeek()
+  const asked       = Math.floor(Number(opts.week) || 0)
+  const week        = asked >= 1 && asked < currentWeek ? asked : currentWeek
+  const isPast      = week < currentWeek
+  const weekEnd     = isPast ? fyWeekEndDate(fy, week) : new Date()
+  const fyMonth     = fyMonthOf(weekEnd)
 
   const [buyers, allPI, targets] = await Promise.all([
     get8020Buyers(), getPIRecords(), getTargetRecords(fy),
   ])
   // Use the SAME FY filter as Live Data (by PI date), so totals stay in sync.
-  const fyPI = allPI.filter((r) => isInFY(parsePIDate(r.piDate), fy))
+  const weekOf = (r: (typeof allPI)[number]) => {
+    if (r.fyWeekNo > 0) return r.fyWeekNo
+    const d = parsePIDate(r.piDate)
+    return isNaN(d.getTime()) ? 0 : getFYWeek(d, fy)
+  }
+  const fyPI = allPI
+    .filter((r) => isInFY(parsePIDate(r.piDate), fy))
+    .filter((r) => !isPast || weekOf(r) <= week)
 
   // Current-month PI: prefer fyMonthNo, else derive from piDate
   const monthPI = fyPI.filter((r) => {
@@ -167,7 +200,10 @@ export async function buildDailyBuyerReport(): Promise<DailyReport> {
     totalBuyers:  rows.length,
   }
 
-  return { fy, week, fyMonth, monthName: FY_MONTH_NAMES[fyMonth] ?? "", rows, summary }
+  return {
+    fy, week, currentWeek, weekEnd: isoDate(weekEnd),
+    fyMonth, monthName: FY_MONTH_NAMES[fyMonth] ?? "", rows, summary,
+  }
 }
 
 // ── HTML email renderer (inline styles — Gmail-safe; capped rows; mobile h-scroll) ──

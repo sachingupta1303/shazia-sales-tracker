@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { DailyReportClient } from "./daily-report-client"
 import { PageHeader } from "@/components/ui/page-header"
+import { getCurrentFYWeek } from "@/lib/fy-utils"
 import type { AppUser } from "@/types"
 
 export const metadata = { title: "Daily Buyer Report · Admin | Shazia Rice" }
@@ -32,7 +33,7 @@ export default async function DailyReportPage() {
           ← Admin home
         </a>
       </PageHeader>
-      <DailyReportClient loginEmail={user.email ?? ""} />
+      <DailyReportClient loginEmail={user.email ?? ""} currentWeek={getCurrentFYWeek()} />
     </div>
   )
 }

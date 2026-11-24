@@ -16,20 +16,23 @@ const ST_LBL: Record<string, string> = { OVER_ACHIEVED: "Over Achieved", ON_TRAC
 const ST_RGB: Record<string, [number, number, number]> = { OVER_ACHIEVED: [5,150,105], ON_TRACK: [217,119,6], CRITICAL: [220,38,38], NO_TARGET: [107,114,128] }
 const fmt = (n: number, d = 0) => Number(n).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })
 
-export function DailyReportClient({ loginEmail }: { loginEmail: string }) {
+export function DailyReportClient({ loginEmail, currentWeek }: { loginEmail: string; currentWeek: number }) {
   const [to, setTo]       = useState("")
   const [busy, setBusy]   = useState(false)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [status, setStatus]   = useState<StatusFilter>("")
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [week, setWeek] = useState<number>(currentWeek)   // currentWeek = till now
 
-  const statusQS = status ? `&status=${status}` : ""
+  const isPastWeek = week < currentWeek
+  const weekQS   = isPastWeek ? `&week=${week}` : ""
+  const statusQS = (status ? `&status=${status}` : "") + weekQS
 
   const send = async () => {
     setBusy(true); setResult(null)
     try {
-      const qs = to.trim() ? `?send=1&to=${encodeURIComponent(to.trim())}` : "?send=1"
+      const qs = (to.trim() ? `?send=1&to=${encodeURIComponent(to.trim())}` : "?send=1") + weekQS
       const res = await fetch(`/api/reports/daily-buyer${qs}`)
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.ok) {
@@ -45,13 +48,14 @@ export function DailyReportClient({ loginEmail }: { loginEmail: string }) {
   const downloadPDF = async () => {
     setPdfBusy(true)
     try {
-      const res  = await fetch(`/api/reports/daily-buyer?${status ? `status=${status}` : ""}`)
+      const res  = await fetch(`/api/reports/daily-buyer?${status ? `status=${status}` : ""}${weekQS}`)
       const data = await res.json()
       const { default: jsPDF }     = await import("jspdf")
       const { default: autoTable } = await import("jspdf-autotable")
 
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-      const dateLabel = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+      const asOf = isPastWeek && data.weekEnd ? new Date(`${data.weekEnd}T12:00:00`) : new Date()
+      const dateLabel = (isPastWeek ? "As of " : "") + asOf.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
       const s = data.summary
       const tillNowTarget = s.yearTarget > 0 ? (s.yearTarget / 52) * data.week : 0
       const overallPct = tillNowTarget > 0 ? Math.round((s.fytdActual / tillNowTarget) * 100) : 0
@@ -100,7 +104,9 @@ export function DailyReportClient({ loginEmail }: { loginEmail: string }) {
         },
       })
 
-      doc.save(`Daily-Buyer-Report-${new Date().toISOString().slice(0, 10)}${status ? `-${status}` : ""}.pdf`)
+      doc.save(isPastWeek
+        ? `Buyer-Report-FY${data.fy}-Week-${data.week}${status ? `-${status}` : ""}.pdf`
+        : `Daily-Buyer-Report-${new Date().toISOString().slice(0, 10)}${status ? `-${status}` : ""}.pdf`)
     } catch (e) {
       console.error(e)
       setResult({ ok: false, msg: "⚠️ PDF generate failed" })
@@ -134,6 +140,29 @@ export function DailyReportClient({ loginEmail }: { loginEmail: string }) {
           </button>
         </div>
 
+        {/* Week picker — report as of the end of a past FY week */}
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <span className="text-xs text-gray-500">Week:</span>
+          <select
+            value={week}
+            onChange={(e) => setWeek(Number(e.target.value))}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            {Array.from({ length: currentWeek }, (_, i) => currentWeek - i).map((w) => (
+              <option key={w} value={w}>{w === currentWeek ? `Week ${w} · till now (current)` : `Week ${w}`}</option>
+            ))}
+          </select>
+          {isPastWeek && (
+            <>
+              <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 font-medium">
+                Showing report as of the end of Week {week}
+              </span>
+              <button onClick={() => setWeek(currentWeek)} className="text-xs text-green-700 hover:underline">Back to current week</button>
+            </>
+          )}
+          <span className="text-[11px] text-gray-400">(applies to preview, PDF and email)</span>
+        </div>
+
         {/* Status filter pills (apply to preview + PDF) */}
         <div className="flex items-center gap-2 flex-wrap pt-1">
           <span className="text-xs text-gray-500">Filter:</span>
@@ -161,10 +190,10 @@ export function DailyReportClient({ loginEmail }: { loginEmail: string }) {
       {/* Live preview */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-2 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-          Live Preview {status && `· ${STATUS_PILLS.find((p) => p.val === status)?.label}`}
+          {isPastWeek ? `Preview · Week ${week}` : "Live Preview"} {status && `· ${STATUS_PILLS.find((p) => p.val === status)?.label}`}
         </div>
         <iframe
-          key={`${refreshKey}-${status}`}
+          key={`${refreshKey}-${status}-${week}`}
           src={`/api/reports/daily-buyer?format=html${statusQS}&_=${refreshKey}`}
           title="Daily Buyer Report preview"
           className="w-full"
