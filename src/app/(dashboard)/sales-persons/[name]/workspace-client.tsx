@@ -43,13 +43,14 @@ interface SalesPersonData {
     tier1Count: number; tier2Count: number; tier3Count: number; othersCount: number
   }
   mix?: OrderMix
+  view?: "pi" | "owner"
   buyers: BuyerRow[]
   countries: CountryRow[]
   piHistory: PIRecord[]
   meta: { currentFY: string; currentWeek: number }
 }
 
-interface Props { salesPersonName: string; userRole: string; userName: string }
+interface Props { salesPersonName: string; userRole: string; userName: string; view?: string }
 
 // ─── Pagination helper ────────────────────────────────────────────────────────
 
@@ -86,56 +87,6 @@ function KpiCard({ label, value, sub, color }: {
       <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{label}</span>
       <span className="text-2xl font-black text-gray-900 leading-none">{value}</span>
       {sub && <span className="text-xs text-gray-400 font-medium mt-0.5">{sub}</span>}
-    </div>
-  )
-}
-
-// ─── Tier Summary Cards ────────────────────────────────────────────────────────
-
-function TierCards({ summary }: { summary: SalesPersonData["summary"] }) {
-  const tiers = [
-    {
-      label: "Tier 1", count: summary.tier1Count,
-      bg: "bg-amber-50 border-amber-200",
-      dot: "bg-amber-400", text: "text-amber-700",
-      badge: "T1",
-    },
-    {
-      label: "Tier 2", count: summary.tier2Count,
-      bg: "bg-blue-50 border-blue-200",
-      dot: "bg-blue-400", text: "text-blue-700",
-      badge: "T2",
-    },
-    {
-      label: "Tier 3", count: summary.tier3Count,
-      bg: "bg-emerald-50 border-emerald-200",
-      dot: "bg-emerald-400", text: "text-emerald-700",
-      badge: "T3",
-    },
-    {
-      label: "Others", count: summary.othersCount,
-      bg: "bg-gray-50 border-gray-200",
-      dot: "bg-gray-400", text: "text-gray-600",
-      badge: "OT",
-    },
-  ]
-
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {tiers.map((t) => (
-        <div key={t.label}
-          className={`rounded-2xl border ${t.bg} p-4 flex items-center gap-3 shadow-sm`}
-        >
-          <div className={`w-10 h-10 rounded-xl ${t.dot} flex items-center justify-center flex-shrink-0`}>
-            <span className="text-white text-xs font-black">{t.badge}</span>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 font-medium">{t.label}</p>
-            <p className={`text-2xl font-black leading-tight ${t.text}`}>{t.count}</p>
-            <p className="text-[10px] text-gray-400">buyers</p>
-          </div>
-        </div>
-      ))}
     </div>
   )
 }
@@ -384,7 +335,7 @@ function MarketTab({ countries }: { countries: CountryRow[] }) {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 
-export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
+export function SalesPersonWorkspaceClient({ salesPersonName, view }: Props) {
   const router = useRouter()
   const [data, setData] = useState<SalesPersonData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -392,7 +343,7 @@ export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
   const [tab, setTab] = useState<"buyers" | "history" | "countries">("buyers")
 
   useEffect(() => {
-    fetch(`/api/sales-persons/${encodeURIComponent(salesPersonName)}`)
+    fetch(`/api/sales-persons/${encodeURIComponent(salesPersonName)}${view === "owner" ? "?view=owner" : ""}`)
       .then(async (r) => {
         if (!r.ok) throw new Error("Failed to load workspace")
         return r.json()
@@ -400,7 +351,7 @@ export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [salesPersonName])
+  }, [salesPersonName, view])
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -425,47 +376,110 @@ export function SalesPersonWorkspaceClient({ salesPersonName }: Props) {
     { id: "countries", label: "Market Distribution",icon: "🌍", count: countries.length },
   ] as const
 
+  const isOwnerView = data.view === "owner"
+  const goBack = () => {
+    // Go to the page we came from; if the workspace was opened directly (new tab,
+    // shared link) fall back to the matching Target vs Actual tab.
+    const sameSite = document.referrer.startsWith(window.location.origin)
+    if (sameSite && window.history.length > 1) router.back()
+    else router.push(`/targets?tab=${isOwnerView ? "salesperson" : "pisales"}`)
+  }
+  const pacePct = perf.targetDue > 0 ? Math.round((perf.actual / perf.targetDue) * 100) : 0
+  const barPct  = Math.max(0, Math.min(100, pacePct))
+  const mixTot  = mix ? mix.nbdCtrs + mix.crrCtrs : 0
+  const nbdPct  = mix && mixTot > 0 ? Math.round((mix.nbdCtrs / mixTot) * 100) : 0
+  const tiers   = [
+    { k: "T1", n: summary.tier1Count, c: "bg-amber-100 text-amber-800" },
+    { k: "T2", n: summary.tier2Count, c: "bg-blue-100 text-blue-800" },
+    { k: "T3", n: summary.tier3Count, c: "bg-emerald-100 text-emerald-800" },
+    { k: "Others", n: summary.othersCount, c: "bg-gray-100 text-gray-600" },
+  ]
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => router.back()}
-          className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
-        >←</button>
-        <div>
-          <h1 className="text-2xl font-black text-gray-900">{salesPerson.name}</h1>
-          <p className="text-sm text-gray-400 font-medium">
-            Sales Person Workspace · FY {meta.currentFY} · Week {meta.currentWeek} · orders as per PI data
-          </p>
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <button
+            onClick={goBack}
+            title="Back"
+            className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
+          >←</button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-black text-gray-900">{salesPerson.name}</h1>
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${isOwnerView ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700"}`}>
+                {isOwnerView ? "Responsible Person" : "Sales Person (PI)"}
+              </span>
+              <StatusBadge status={perf.status} />
+            </div>
+            <p className="text-xs text-gray-400 mt-0.5">
+              FY {meta.currentFY} · Week {meta.currentWeek} ·{" "}
+              {isOwnerView ? "all orders of the buyers this person is responsible for" : "orders booked by this person on the PI"}
+            </p>
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                <span><b className="text-gray-900 text-sm">{formatNumber(perf.actual)}</b> of {formatNumber(perf.targetDue)} due till W{meta.currentWeek}</span>
+                <span className="font-semibold text-gray-700">{perf.targetDue > 0 ? `${pacePct}% of pace` : "no target"}</span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${barPct >= 100 ? "bg-green-500" : barPct >= 70 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${barPct}%` }} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* KPI Row */}
+      {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <KpiCard label="Annual Target"  value={formatNumber(perf.target, 0)}    sub="containers"               color="bg-white border-gray-200" />
-        <KpiCard label="Actual Sales"   value={formatNumber(perf.actual)}        sub={`${perf.achievementPct}% achieved`} color="bg-green-50 border-green-200" />
-        <KpiCard label="Target Due"     value={formatNumber(perf.targetDue)}     sub={`till W${meta.currentWeek}`}        color="bg-blue-50 border-blue-200" />
+        <KpiCard label="Annual Target" value={formatNumber(perf.target, 0)} sub="containers"                      color="bg-white border-gray-200" />
+        <KpiCard label="Target Due"    value={formatNumber(perf.targetDue)} sub={`till W${meta.currentWeek}`}       color="bg-white border-gray-200" />
+        <KpiCard label="Actual"        value={formatNumber(perf.actual)}    sub={`${perf.achievementPct}% of year`} color="bg-green-50 border-green-200" />
         <div className="rounded-2xl border bg-white border-gray-200 p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Gap to Target</span>
+          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Gap to Due</span>
           <GapCell gap={perf.gap} className="text-2xl font-black" />
-          <StatusBadge status={perf.status} />
+          <span className="text-xs text-gray-400">containers</span>
         </div>
-        <KpiCard label="Prev Year"      value={formatNumber(perf.prevActual)}   sub="historical"               color="bg-gray-50 border-gray-200" />
+        <KpiCard label="Prev Year"     value={formatNumber(perf.prevActual)} sub="full year"                       color="bg-white border-gray-200" />
       </div>
 
-      {/* Order mix — NBD (new buyers) vs CRR (repeat buyers), from PI data */}
+      {/* Order mix — NBD vs CRR, PIs, countries, tiers */}
       {mix && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <KpiCard label="NBD · New Buyers"    value={formatNumber(mix.nbdCtrs)} sub={`${mix.nbdPIs} PIs · ${mix.nbdBuyers} buyers`} color="bg-green-50 border-green-200" />
-          <KpiCard label="CRR · Repeat Buyers" value={formatNumber(mix.crrCtrs)} sub={`${mix.crrPIs} PIs · ${mix.crrBuyers} buyers`} color="bg-blue-50 border-blue-200" />
-          <KpiCard label="Total Orders"        value={mix.pis}                    sub={`PIs · ${formatNumber(mix.mts, 0)} MT`}        color="bg-white border-gray-200" />
-          <KpiCard label="Countries"           value={mix.countries}              sub="with orders this FY"                         color="bg-white border-gray-200" />
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
+            <span className="font-semibold text-gray-800">Order mix this FY</span>
+            <span className="text-xs text-gray-500">
+              <b className="text-gray-800">{mix.pis}</b> PIs · <b className="text-gray-800">{formatNumber(mix.mts, 0)}</b> MT · <b className="text-gray-800">{mix.countries}</b> countries
+            </span>
+          </div>
+          <div className="h-3 bg-gray-100 rounded-full overflow-hidden flex">
+            <div className="h-full bg-green-500" style={{ width: `${nbdPct}%` }} title={`NBD ${nbdPct}%`} />
+            <div className="h-full bg-blue-500" style={{ width: `${mixTot > 0 ? 100 - nbdPct : 0}%` }} title={`CRR ${100 - nbdPct}%`} />
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="flex items-start gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 mt-1.5 shrink-0" />
+              <div>
+                <div className="text-xs text-gray-500">NBD · new buyers</div>
+                <div><b className="text-lg text-gray-900">{formatNumber(mix.nbdCtrs)}</b> <span className="text-xs text-gray-500">ctrs · {mix.nbdPIs} PIs · {mix.nbdBuyers} buyers</span></div>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+              <div>
+                <div className="text-xs text-gray-500">CRR · repeat buyers</div>
+                <div><b className="text-lg text-gray-900">{formatNumber(mix.crrCtrs)}</b> <span className="text-xs text-gray-500">ctrs · {mix.crrPIs} PIs · {mix.crrBuyers} buyers</span></div>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
+            <span className="text-xs text-gray-500">Buyers by tier:</span>
+            {tiers.map((t) => (
+              <span key={t.k} className={`text-xs font-semibold px-2 py-0.5 rounded-full ${t.c}`}>{t.k} · {t.n}</span>
+            ))}
+          </div>
         </div>
       )}
-
-      {/* Tier Summary */}
-      <TierCards summary={summary} />
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-gray-200">

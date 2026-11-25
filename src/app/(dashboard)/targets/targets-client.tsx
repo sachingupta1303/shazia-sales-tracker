@@ -40,7 +40,8 @@ function StatusBadge3({ row }: { row: { target: number; achievementPercent: numb
 
 type Tab = "country" | "buyer" | "salesperson" | "pisales" | "coordinator" | "newbusiness"
 
-interface Props { userRole?: UserRole; salesPerson?: string }
+interface Props { userRole?: UserRole; salesPerson?: string; initialTab?: string }
+const TABS: Tab[] = ["country", "buyer", "salesperson", "pisales", "coordinator", "newbusiness"]
 
 // ── Tab Button ────────────────────────────────────────────────────────────────
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -197,8 +198,8 @@ function BuyerTable({ rows, week, showSP }: { rows: BuyerPerformance[]; week: nu
               </td>
               {showSP && (
                 <td className="px-4 py-3 text-gray-600 text-xs text-left">
-                  <a 
-                    href={`/sales-persons/${encodeURIComponent(r.salesPerson)}`}
+                  <a
+                    href={`/sales-persons/${encodeURIComponent(r.salesPerson)}?view=owner`}
                     onClick={(e) => e.stopPropagation()}
                     className="hover:text-green-700 hover:underline"
                   >
@@ -263,9 +264,9 @@ function BuyerTable({ rows, week, showSP }: { rows: BuyerPerformance[]; week: nu
 //   SalesPersonPerformance shape (name held in `salesPerson`). `nameLabel` sets the
 //   header text; `linkBase` (when set) makes each name link to a detail page.
 function SPTable({
-  rows, week, nameLabel = "Sales Person", linkBase = "/sales-persons",
+  rows, week, nameLabel = "Sales Person", linkBase = "/sales-persons", linkQuery = "",
 }: {
-  rows: SalesPersonPerformance[]; week: number; nameLabel?: string; linkBase?: string | null
+  rows: SalesPersonPerformance[]; week: number; nameLabel?: string; linkBase?: string | null; linkQuery?: string
 }) {
   const router = useRouter()
   const totalGap = sumField(rows, "gap")
@@ -294,7 +295,7 @@ function SPTable({
             <tr
               key={r.salesPerson}
               className={`hover:bg-green-50 transition-colors group ${linkBase ? "cursor-pointer" : ""}`}
-              onClick={linkBase ? () => router.push(`${linkBase}/${encodeURIComponent(r.salesPerson)}`) : undefined}
+              onClick={linkBase ? () => router.push(`${linkBase}/${encodeURIComponent(r.salesPerson)}${linkQuery}`) : undefined}
             >
               <td className="px-3 py-3 text-gray-400 tabular-nums text-center">{(page - 1) * 10 + i + 1}</td>
               <td className="px-4 py-3 font-bold text-gray-800 group-hover:text-green-700">{r.salesPerson}</td>
@@ -928,8 +929,17 @@ function PISalesTable({ rows, week }: { rows: PISalesRow[]; week: number }) {
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export function TargetsClient({ userRole, salesPerson }: Props) {
-  const [tab,      setTab]     = useState<Tab>("country")
+export function TargetsClient({ userRole, salesPerson, initialTab }: Props) {
+  // Tab lives in the URL (?tab=…) so "Back" from a person's page returns to it.
+  const [tab, setTabState] = useState<Tab>(
+    TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "country"
+  )
+  const setTab = (t: Tab) => {
+    setTabState(t)
+    const u = new URL(window.location.href)
+    u.searchParams.set("tab", t)
+    window.history.replaceState(window.history.state, "", u.toString())
+  }
   const [filters,    setFilters]    = useState<FilterState>({})
   const [tierFilter, setTierFilter] = useState<string>("")
   const [statusFilter, setStatusFilter] = useState<string>("")  // "" | ACHIEVED | ON_TRACK | CRITICAL
@@ -1195,7 +1205,7 @@ export function TargetsClient({ userRole, salesPerson }: Props) {
           <>
             {tab === "country"    && countryData && <div className="hidden md:block"><CountryTable rows={countryRows} week={week} /></div>}
             {tab === "buyer"      && buyerData   && <div className="hidden md:block"><BuyerTable   rows={filteredBuyerRows} week={week} showSP={!isSP} /></div>}
-            {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} nameLabel="Responsible Person" /></div>}
+            {tab === "salesperson"&& spData       && <div className="hidden md:block"><SPTable      rows={spRows}      week={week} nameLabel="Responsible Person" linkQuery="?view=owner" /></div>}
             {tab === "pisales"    && piSpData     && <PISalesTable rows={piSpRows} week={week} />}
             {tab === "coordinator"&& coordData    && <div className="hidden md:block"><SPTable      rows={coordRows}   week={week} nameLabel="Sales Coordinator" linkBase={null} /></div>}
             {tab === "newbusiness"&& buyerData && countryData && (

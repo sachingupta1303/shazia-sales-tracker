@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import {
   getPIRecords, getTargetRecords, getBuyerMaster,
   getCanonicalBuyers, getBuyerAliasMap,
-  filterPIByFY, get8020Buyers, sumContainers,
+  filterPIByFY, get8020Buyers, sumContainers, buildOwnerResolver,
 } from "@/lib/data"
 import {
   getCurrentFY, getPreviousFY, getCurrentFYWeek,
@@ -82,15 +82,31 @@ export async function GET(
 
   // This person's share of a target row (a target owned by "A/B" is split equally).
   const NAME = name.toUpperCase().trim()
+
+  // Two views of a person:
+  //   view=pi    (default) — orders booked by this Sales Person on the PI; a shared
+  //                          80/20 target ("A/B") is split equally between A and B.
+  //   view=owner           — "Responsible Person": every order of the buyers this
+  //                          person owns on the 80/20 / target sheet (incl. combined
+  //                          owners like "ATIF/MOHIT GUPTA"), with their full target.
+  // A combined name ("A/B") can only be an owner, so it always uses view=owner.
+  const viewParam = new URL(req.url).searchParams.get("view")
+  const view: "pi" | "owner" = viewParam === "owner" || NAME.includes("/") ? "owner" : "pi"
+
   const shareOf = (owner: string) => {
+    if (view === "owner") return (owner || "").toUpperCase().trim() === NAME ? 1 : 0
     const people = splitOwners(owner)
     return people.includes(NAME) ? 1 / people.length : 0
   }
 
-  const currentPI = filterPIByFY(allPI, currentFY)
-    .filter((r) => r.salesPerson.toUpperCase() === name.toUpperCase())
-  const prevPI = filterPIByFY(allPI, previousFY)
-    .filter((r) => r.salesPerson.toUpperCase() === name.toUpperCase())
+  const ownerOf = buildOwnerResolver(targets.filter((t) => t.financialYear === currentFY), buyerMaster)
+  const isMine = (r: (typeof allPI)[number]) =>
+    view === "owner"
+      ? (ownerOf(r) || "").toUpperCase().trim() === NAME
+      : (r.salesPerson || "").toUpperCase().trim() === NAME
+
+  const currentPI = filterPIByFY(allPI, currentFY).filter(isMine)
+  const prevPI    = filterPIByFY(allPI, previousFY).filter(isMine)
 
   // Aggregated Performance
   const actual       = sumContainers(currentPI)
@@ -241,6 +257,7 @@ export async function GET(
     piHistory: currentPI
       .sort((a, b) => new Date(b.piDate).getTime() - new Date(a.piDate).getTime())
       .slice(0, 1000),
+    view,
     meta: { currentFY, currentWeek }
   })
 }

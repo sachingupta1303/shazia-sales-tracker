@@ -5,9 +5,12 @@ import type { AppUser } from "@/types"
 
 export default async function SalesPersonPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ name: string }>
+  searchParams: Promise<{ view?: string }>
 }) {
+  const { view } = await searchParams
   const session = await auth()
   if (!session?.user) redirect("/login")
 
@@ -17,10 +20,11 @@ export default async function SalesPersonPage({
 
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
-      <SalesPersonWorkspaceClient 
+      <SalesPersonWorkspaceClient
         salesPersonName={name}
         userRole={user.role}
         userName={user.name}
+        view={view}
       />
     </div>
   )

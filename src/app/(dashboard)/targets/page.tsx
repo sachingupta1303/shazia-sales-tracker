@@ -6,7 +6,12 @@ import type { AppUser } from "@/types"
 export const metadata = { title: "Target vs Actual | Shazia Rice" }
 export const dynamic  = "force-dynamic"
 
-export default async function TargetsPage() {
+export default async function TargetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
+  const { tab } = await searchParams
   const session = await auth()
   const user    = session?.user as AppUser
 
@@ -16,7 +21,7 @@ export default async function TargetsPage() {
         title="Target vs Actual"
         subtitle="Country · Buyer · Sales Person performance tracking"
       />
-      <TargetsClient userRole={user?.role} salesPerson={user?.salesPersonName} />
+      <TargetsClient userRole={user?.role} salesPerson={user?.salesPersonName} initialTab={tab} />
     </div>
   )
 }
